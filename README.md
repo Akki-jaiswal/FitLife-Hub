@@ -1,51 +1,46 @@
-# FitLife Hub 💪
+# 🏋️‍♂️ FitLife Hub | AI-Powered Health & Fitness Tracker
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-View%20Site-2ecc71?style=for-the-badge&logo=github)](https://akki-jaiswal.github.io/FitLife-Hub/)
+FitLife Hub is a comprehensive, full-stack web application designed to help users track their fitness journey, log meals using Artificial Intelligence, and generate professional health audits.
 
+## ✨ Key Features
+* **🤖 AI Meal Logger:** Upload a photo of your food, and our AI instantly identifies the meal, estimates calories, assigns a health grade, and provides a "burn-off" activity tip.
+* **📊 Personal Progress Tracker:** Dynamic, interactive charts mapping weight and calorie trends over time.
+* **📄 Professional Health Audits:** Generate detailed weekly or monthly PDF reports featuring AI-driven strategic analysis of your habits.
+* **⌚ Wearable Sync Simulation:** Mock integration for syncing smartwatch data directly to the dashboard.
+* **🌓 Sleek UI/UX:** Fully responsive design featuring a premium Glassmorphism aesthetic and seamless Dark/Light mode toggling.
 
-FitLife Hub is a modern, responsive landing page designed to inspire and guide users on their fitness journey. Built purely with HTML and CSS, it provides a clean, engaging, and user-friendly experience across various devices. 📱💻
+## 🛠️ Tech Stack
+* **Frontend:** React (Vite), CSS3 (CSS Variables for dynamic theming), Chart.js
+* **Backend:** Python, Flask, SQLAlchemy (SQLite)
+* **AI Integration:** Google Gemini 2.5 Flash (Vision/Image Analysis), Groq Llama 3 (Conversational Agent & Report Generation)
 
-## Features ✨
+## 🚀 Local Setup Instructions
 
-* **Responsive Design:** Adapts seamlessly to different screen sizes (desktop, tablet, mobile). 📏
-* **Motivational Quotes:** Daily inspiration to keep users motivated. 💬
-* **Clear Benefits Section:** Highlights the advantages of a healthy lifestyle. 🌱
-* **Personal Progress Tracker Placeholder:** A dedicated section for future tracking functionality. 📈
-* **User Testimonials:** Showcases positive feedback from users. ⭐
-* **Contact Form:** A simple form for inquiries and feedback. 📧
-* **Frequently Asked Questions (FAQ):** An accordion-style section for common queries using native HTML `<details>` and `<summary>` tags. ❓
+### 1. Clone the repository
+```bash
+git clone https://github.com/YOUR_USERNAME/fitlife-hub.git
+cd fitlife-hub
+```
 
-## Technologies Used 🛠️
+### 2. Backend Setup
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate  # On Windows use: venv\Scripts\activate
+pip install -r requirements.txt
+```
+*Create a `.env` file in the `backend` directory and add your API keys (GEMINI_API_KEY, GROQ_API_KEY, FLASK_SECRET_KEY, MAIL_APP_PASSWORD).*
+```bash
+python app.py
+```
 
-* **HTML5:** For structuring the web content. 📄
-* **CSS3:** For styling and layout, including responsive design. 🎨
+### 3. Frontend Setup
+Open a new terminal window:
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-## Future Enhancements 🚀
-
-We have exciting plans to expand FitLife Hub's capabilities:
-
-* **Interactive Progress Tracker (JavaScript):** Implement full functionality for users to log workouts, set goals, and visualize their progress with charts. 📊
-* **Dynamic Hero Background (JavaScript):** Cycle through multiple engaging background images in the hero section for a more dynamic visual experience. 🖼️
-* **One-at-a-Time FAQ (JavaScript):** Enhance the FAQ section so that only one question can be open at a time. 👆
-* **Smooth Scrolling (JavaScript):** Implement smooth scrolling for navigation links. ⬇️
-* **Mobile Navigation Toggle (JavaScript):** Add a hamburger menu for better navigation on small screens. ☰
-* **User Authentication:** Allow users to create accounts and save their personal data securely. 🔐
-* **API Integration:** Potentially integrate with fitness APIs for more advanced features (e.g., workout routines, nutrition data). 🔗
-* **Multi-Theming (JavaScript/CSS Variables):** Allow users to switch between different color themes for personalized aesthetics. 🌈
-* **Scroll-to-Top Button (JavaScript):** Implement a button that appears on scroll and takes the user back to the top of the page. ⬆️
-
-## How to Run Locally 🏃‍♀️
-
-1.  Clone the repository:
-    ```bash
-    git clone [https://github.com/Akki-jaiswal/FitLife-Hub.git](https://github.com/Akki-jaiswal/FitLife-Hub.git)
-    ```
-2.  Navigate to the project directory:
-    ```bash
-    cd FitLife-Hub
-    ```
-3.  Open `index.html` in your web browser. 🌐
-
----
-
-**Author:** Akki-jaiswal
+## 🌐 Live Demo
+[Link to Live Project] *(Coming Soon)*
