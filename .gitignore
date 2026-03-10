@@ -1,0 +1,16 @@
+# Python / Backend
+venv/
+__pycache__/
+*.pyc
+.env
+backend/instance/
+site.db
+
+# Node / Frontend
+node_modules/
+dist/
+.DS_Store
+
+# Editor
+.vscode/
+old_html_backup/
