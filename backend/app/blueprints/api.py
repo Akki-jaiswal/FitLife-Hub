@@ -1,0 +1,479 @@
+from flask import Blueprint, request, jsonify, session, send_file
+from sqlalchemy import func
+from datetime import datetime, timedelta, timezone
+from fpdf import FPDF
+from fpdf.enums import XPos, YPos
+import io
+import time
+import uuid
+import threading
+import os
+from twilio.rest import Client
+import json
+
+from ..extensions import db, cache, limiter
+from ..models import Progress, User
+
+bp = Blueprint('api', __name__)
+
+@bp.route('/add_progress', methods=['POST'])
+def add_progress():
+    if 'user_id' not in session:
+        return jsonify({"message": "Please login first"}), 401
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({"message": "No data provided"}), 400
+        
+    new_entry = Progress(
+        weight=data.get('weight'),
+        steps=data.get('steps'),
+        calories=data.get('calories'),
+        user_id=session['user_id']
+    )
+    
+    db.session.add(new_entry)
+    db.session.commit()
+    cache.delete(f"progress_{session['user_id']}")
+    return jsonify({"message": "Data recorded successfully!"}), 200
+
+
+@bp.route('/get_progress')
+def get_progress():
+    if 'user_id' not in session:
+        return jsonify([]), 401
+        
+    cache_key = f"progress_{session['user_id']}"
+    cached_data = cache.get(cache_key)
+    if cached_data:
+        return jsonify(cached_data), 200
+    
+    entries = Progress.query.filter_by(user_id=session['user_id']).order_by(Progress.date.asc()).all()
+    
+    results = [
+        {
+            "date": entry.date.strftime('%b %d') if entry.date else None,  
+            "weight": entry.weight,
+            "steps": entry.steps,
+            "calories": entry.calories,
+            "meal_name": entry.meal_name,
+            "health_grade": entry.health_grade,
+            "burn_off_tip": entry.burn_off_tip
+        } for entry in entries
+    ]
+    cache.set(cache_key, results, timeout=60)
+    return jsonify(results), 200
+
+
+@bp.route('/analyze_meal', methods=['POST'])
+@limiter.limit('10 per minute')
+def analyze_meal():
+    if 'user_id' not in session:
+        return jsonify({"message": "Please login first"}), 401
+        
+    user = User.query.get(session['user_id'])
+    if not user:
+        return jsonify({"message": "User not found"}), 404
+        
+    file = request.files.get('meal_image')
+    if not file:
+        return jsonify({"message": "No image provided"}), 400
+        
+    image_bytes = file.read()
+    mime_type = file.mimetype or "image/jpeg"
+    
+    from ..services.ai_service import analyze_meal_image
+    ai_data = analyze_meal_image(image_bytes, mime_type)
+    
+    new_entry = Progress(
+        meal_name=ai_data.get('meal_name', 'Unknown Meal'),
+        calories=ai_data.get('calories', 0),
+        health_grade=ai_data.get('health_grade', 'N/A'),
+        burn_off_tip=ai_data.get('burn_off_tip', ''),
+        user_id=session['user_id']
+    )
+    
+    meal_name_lower = ai_data.get('meal_name', 'Unknown Meal').lower()
+    if 'unrecognized' not in meal_name_lower and 'unknown' not in meal_name_lower:
+        db.session.add(new_entry)
+        db.session.commit()
+        cache.delete(f"progress_{session['user_id']}")
+        
+    return jsonify(ai_data), 200
+
+
+from datetime import datetime, timedelta
+
+@bp.route('/generate_report', methods=['POST'])
+@limiter.limit('5 per minute')
+def generate_report():
+    if 'user_id' not in session:
+        return jsonify({"message": "Please login first"}), 401
+        
+    user = User.query.get(session['user_id'])
+    if not user:
+        return jsonify({"message": "User not found"}), 404
+        
+    data = request.get_json() or {}
+    range_days = int(data.get('range', 7))
+    
+    cutoff_date = datetime.utcnow() - timedelta(days=range_days)
+    progress_logs_query = Progress.query.filter(Progress.user_id == user.id, Progress.date >= cutoff_date).order_by(Progress.date.desc()).all()
+    
+    # Filter out unrecognized meals
+    progress_logs = []
+    for log in progress_logs_query:
+        name = log.meal_name or ""
+        if "unrecognized" in name.lower() or "unknown" in name.lower():
+            continue
+        progress_logs.append(log)
+    
+    total_meals = sum(1 for log in progress_logs if log.meal_name)
+    total_calories = sum(log.calories or 0 for log in progress_logs)
+    avg_cal = total_calories // total_meals if total_meals > 0 else 0
+    total_steps = sum(log.steps or 0 for log in progress_logs)
+    avg_steps = total_steps // len(progress_logs) if progress_logs else 0
+    
+    # Generate Insights with AI
+    from ..services.ai_service import analyze_fitness_query
+    period = "Week" if range_days == 7 else "Month"
+    ai_prompt = f"Act as a professional fitness coach. The user has requested a {period}ly report. They have logged {total_meals} meals, with an average of {avg_cal} kcal per meal, and averaged {avg_steps} steps per day over the last {range_days} days. Provide 3 bullet points of short, encouraging, and actionable insights based on these numbers. Don't use markdown formatting like ** or *, just plain text."
+    
+    try:
+        report_text = analyze_fitness_query(ai_prompt)
+        # Remove any bolding if the AI ignores the prompt
+        report_text = report_text.replace('**', '').replace('*', '')
+    except Exception as e:
+        report_text = f"Based on your recent logs, you have consumed an average of {avg_cal} kcal over {total_meals} meals tracked. Keep focusing on balanced nutrition to reach your goals faster!"
+    
+    return jsonify({
+        "report": report_text,
+        "avg_cal": avg_cal,
+        "total_meals": total_meals,
+        "avg_steps": avg_steps,
+        "range_days": range_days
+    }), 200
+
+@bp.route('/download_report', methods=['POST'])
+@limiter.limit('5 per minute')
+def download_report():
+    if 'user_id' not in session:
+        return jsonify({"message": "Please login first"}), 401
+    
+    user = User.query.get(session['user_id'])
+    
+    data = request.get_json() or {}
+    report_text = data.get('report', 'No report available.')
+    avg_cal = data.get('avg_cal', 0)
+    total_meals = data.get('total_meals', 0)
+    range_days = int(data.get('range_days', 7))
+    
+    # Fetch logs for the table
+    cutoff_date = datetime.utcnow() - timedelta(days=range_days)
+    progress_logs_query = Progress.query.filter(Progress.user_id == user.id, Progress.date >= cutoff_date).order_by(Progress.date.desc()).all()
+    
+    # Filter out unrecognized meals
+    progress_logs = []
+    for log in progress_logs_query:
+        name = log.meal_name or ""
+        if "unrecognized" in name.lower() or "unknown" in name.lower():
+            continue
+        progress_logs.append(log)
+    
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Title
+    pdf.set_font("Helvetica", 'B', 22)
+    pdf.set_text_color(46, 204, 113) # #2ecc71
+    pdf.cell(0, 10, txt="FitLife Hub: Health Audit", ln=True, align="C")
+    
+    # Subtitle
+    pdf.set_font("Helvetica", 'B', 10)
+    pdf.set_text_color(127, 140, 141) # Gray
+    gen_date = datetime.utcnow().strftime('%Y-%m-%d')
+    pdf.cell(0, 10, txt=f"Report Period: Last {range_days} Days | Generated: {gen_date}", ln=True, align="C")
+    pdf.ln(5)
+    
+    # Info Box (3 cells)
+    pdf.set_font("Helvetica", 'B', 10)
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_fill_color(245, 245, 245)
+    col_w = 63
+    pdf.cell(col_w, 10, txt=f" TOTAL MEALS: {total_meals}", border=1, fill=True)
+    pdf.cell(col_w, 10, txt=f" AVG CALORIES: {avg_cal}", border=1, fill=True)
+    pdf.cell(col_w, 10, txt=" STATUS: ACTIVE", border=1, fill=True, ln=True)
+    pdf.ln(10)
+    
+    # Coach Analysis
+    pdf.set_font("Helvetica", 'B', 14)
+    pdf.set_text_color(46, 204, 113)
+    pdf.cell(0, 10, txt="Coach Akki's Expert Analysis:", ln=True)
+    
+    pdf.set_font("Helvetica", '', 11)
+    pdf.set_text_color(60, 60, 60)
+    safe_text = report_text.encode('ascii', 'replace').decode('ascii').replace('?', '-')
+    pdf.multi_cell(0, 7, txt=safe_text)
+    pdf.ln(10)
+    
+    # Detailed Activity Log
+    pdf.set_font("Helvetica", 'B', 14)
+    pdf.set_text_color(46, 204, 113)
+    pdf.cell(0, 10, txt="Detailed Activity Log:", ln=True)
+    
+    # Table Header
+    pdf.set_font("Helvetica", 'B', 9)
+    pdf.set_fill_color(46, 204, 113)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(45, 8, "DATE & TIME", border=1, fill=True, align="C")
+    pdf.cell(75, 8, "MEAL / ACTIVITY", border=1, fill=True, align="C")
+    pdf.cell(35, 8, "CALORIES", border=1, fill=True, align="C")
+    pdf.cell(35, 8, "GRADE", border=1, fill=True, align="C")
+    pdf.ln()
+    
+    # Table Rows
+    pdf.set_font("Helvetica", '', 9)
+    pdf.set_text_color(0, 0, 0)
+    for log in progress_logs:
+        date_str = log.date.strftime('%Y-%m-%d %H:%M') if log.date else "N/A"
+        name = "Wearable Activity (Sync)" if log.source == 'wearable' else (log.meal_name or "Unknown")
+        name = (name[:35] + '...') if len(name) > 35 else name
+        cals = f"{log.calories} kcal" if log.calories else "0 kcal"
+        grade = log.health_grade if log.health_grade else "N/A"
+        
+        pdf.cell(45, 8, date_str, border=1, align="C")
+        pdf.cell(75, 8, " " + name, border=1)
+        pdf.cell(35, 8, cals, border=1, align="C")
+        pdf.cell(35, 8, grade, border=1, align="C")
+        pdf.ln()
+        
+    pdf.ln(15)
+    pdf.set_font("Helvetica", '', 8)
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(0, 10, txt="Generated by FitLife Hub AI - Keep pushing your limits!", align="C")
+    
+    response_io = io.BytesIO(pdf.output())
+    response_io.seek(0)
+    
+    return send_file(
+        response_io,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name='FitLife_Report.pdf'
+    )
+
+
+@bp.route('/process_payment', methods=['POST'])
+def process_payment():
+    if 'user_id' not in session:
+        return jsonify({"message": "Please login to upgrade."}), 401
+    
+    data = request.get_json() or {}
+    payment_method = data.get('paymentMethod', 'card')
+    
+    if payment_method == 'upi':
+        utr = data.get('utr', '').strip()
+        
+        # 1. Validate Format
+        if len(utr) != 12 or not utr.isdigit():
+            return jsonify({"message": "Invalid format. UTR must be exactly 12 digits."}), 400
+            
+        # 2. Automated Webhook Simulator (Only accepts Test UTR)
+        time.sleep(2.0) # Simulating bank connection
+        if utr != "999999999999":
+            return jsonify({"message": f"Bank Verification Failed: No funds received for UTR {utr}. Please try again or use the test UTR '999999999999'."}), 402
+            
+        # If it reaches here, the simulated bank returned Success!
+        time.sleep(1.0)
+    else:
+        # Simulate Stripe Card Processing
+        time.sleep(2.0) 
+    
+    user = User.query.get(session['user_id'])
+    if not user:
+        return jsonify({"message": "User not found"}), 404
+        
+    try:
+        # Upgrade user in database safely
+        user.subscription_tier = 'Pro'
+        db.session.commit()
+        
+        # Generate receipt details
+        receipt_id = f"REC-{str(uuid.uuid4())[:8].upper()}"
+        
+        from flask_mail import Message
+        from ..extensions import mail
+        from flask import current_app
+        app = current_app._get_current_object()
+        
+        def send_async_email(app, msg):
+            with app.app_context():
+                try:
+                    mail.send(msg)
+                except Exception as e:
+                    print(f"Background Email Error: {e}", flush=True)
+
+        # 1. Send Email to User
+        user_subject = "Welcome to FitLife Pro! Your Receipt"
+        user_body = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; color: #333;">
+                <h2 style="color: #2ecc71;">Welcome to FitLife Pro, {user.username}!</h2>
+                <p>Your payment was successful. You now have unlimited access to all AI features.</p>
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                    <p><strong>Receipt ID:</strong> {receipt_id}</p>
+                    <p><strong>Amount Paid:</strong> $9.00</p>
+                    <p><strong>Payment Method:</strong> {payment_method.upper()}</p>
+                    <p><strong>Date:</strong> {time.strftime('%Y-%m-%d %H:%M:%S')}</p>
+                </div>
+                <p>Happy Tracking!</p>
+            </body>
+        </html>
+        """
+        try:
+            msg_user = Message(subject=user_subject, recipients=[user.email], html=user_body)
+            threading.Thread(target=send_async_email, args=(app, msg_user)).start()
+        except Exception:
+            pass
+        
+        # 2. Send Email to Owner (Admin)
+        owner_email = "akshayjaiswal0204@gmail.com" 
+        owner_subject = f"🚀 New Pro Sale: {user.username}"
+        owner_body = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif;">
+                <h2 style="color: #27ae60;">Cha-Ching! New Sale! 💰</h2>
+                <p><strong>User:</strong> {user.username} ({user.email})</p>
+                <p><strong>Amount:</strong> $9.00</p>
+                <p><strong>Method:</strong> {payment_method.upper()}</p>
+                <p><strong>Receipt:</strong> {receipt_id}</p>
+            </body>
+        </html>
+        """
+        try:
+            msg_owner = Message(subject=owner_subject, recipients=[owner_email], html=owner_body)
+            threading.Thread(target=send_async_email, args=(app, msg_owner)).start()
+        except Exception:
+            pass
+        
+        return jsonify({"message": "Payment successful!"}), 200
+    except Exception as e:
+        return jsonify({"message": "An error occurred during upgrade."}), 500
+
+
+@bp.route('/wearable/apple_health', methods=['POST'])
+def apple_health_webhook():
+    if 'user_id' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid payload"}), 400
+        
+    try:
+        user = User.query.get(session['user_id'])
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+            
+        new_log = Progress(
+            user_id=user.id,
+            source="Apple HealthKit Sync",
+            steps=data.get('steps', 0),
+            calories=data.get('calories', 0),
+            tenant_id=user.tenant_id
+        )
+        db.session.add(new_log)
+        db.session.commit()
+        
+        cache_key = f"progress_{user.id}"
+        cache.delete(cache_key)
+        
+        return jsonify({"status": "success", "message": "Data ingested"}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@bp.route('/support/contact', methods=['POST'])
+def contact_support():
+    """
+    Handles contact form submissions via Flask-Mail AND Twilio WhatsApp.
+    """
+    data = request.get_json()
+    name = data.get('name')
+    email = data.get('email')
+    message_content = data.get('message')
+    
+    if not all([name, email, message_content]):
+        return jsonify({"error": "Missing fields"}), 400
+        
+    try:
+        # 1. Send via Email (Flask-Mail)
+        from flask_mail import Message
+        from ..extensions import mail
+        
+        msg = Message(subject=f"Support Request from {name}",
+                      recipients=[os.environ.get('SUPPORT_EMAIL', 'support@fitlifehub.com')],
+                      body=f"From: {name} <{email}>\n\n{message_content}")
+        try:
+            mail.send(msg)
+            print("Email sent successfully via Flask-Mail!")
+        except Exception as e:
+            print(f"SMTP Error: {e}", flush=True)
+            return jsonify({"error": f"Failed to send email: {str(e)}"}), 500
+            
+        # 2. Send via WhatsApp (Twilio)
+        from twilio.rest import Client
+        
+        TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', 'mock_sid')
+        TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', 'mock_token')
+        TWILIO_WHATSAPP_NUMBER = os.environ.get('TWILIO_WHATSAPP_NUMBER', 'whatsapp:+14155238886')
+        OWNER_WHATSAPP_NUMBER = os.environ.get('OWNER_WHATSAPP_NUMBER', 'whatsapp:+919999999999') # Dummy
+        
+        # We only send if we have actual credentials (or we simulate success)
+        if TWILIO_ACCOUNT_SID != 'mock_sid':
+            client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+            wa_msg = f"🚨 New FitLife Support Ticket 🚨\n\n*Name:* {name}\n*Email:* {email}\n*Message:* {message_content}"
+            try:
+                client.messages.create(
+                    body=wa_msg,
+                    from_=TWILIO_WHATSAPP_NUMBER,
+                    to=OWNER_WHATSAPP_NUMBER
+                )
+                print("WhatsApp message sent successfully via Twilio!")
+            except Exception as e:
+                print(f"Twilio Error: {e}")
+        else:
+            print(f"Mock Twilio WhatsApp Sent to Owner:\nFrom: {name}\nMessage: {message_content}")
+            
+        return jsonify({"status": "success", "message": "Support ticket dispatched via Email & WhatsApp!"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/chat_with_ai', methods=['POST'])
+def chat_with_ai():
+    data = request.get_json()
+    user_query = data.get('query') or data.get('message')
+    history = data.get('history', [])
+    if not user_query:
+        return jsonify({"message": "Empty query"}), 400
+        
+    try:
+        user_context = ""
+        if 'user_id' in session:
+            from datetime import datetime, timedelta
+            user = User.query.get(session['user_id'])
+            if user:
+                cutoff_date = datetime.utcnow() - timedelta(days=7)
+                progress_logs = Progress.query.filter(Progress.user_id == user.id, Progress.date >= cutoff_date).all()
+                total_meals = sum(1 for log in progress_logs if log.meal_name)
+                total_calories = sum(log.calories or 0 for log in progress_logs)
+                avg_cal = total_calories // total_meals if total_meals > 0 else 0
+                meals_list = ", ".join(set([log.meal_name for log in progress_logs if log.meal_name and log.meal_name != 'Unknown Meal']))
+                user_context = f"The user has tracked {total_meals} meals in the last 7 days. Average calories: {avg_cal} kcal. Foods they recently ate: {meals_list if meals_list else 'None'}."
+                
+        from ..services.ai_service import analyze_fitness_query
+        reply = analyze_fitness_query(user_query, history, user_context=user_context)
+        return jsonify({"reply": reply}), 200
+    except Exception as e:
+        print(f"Chat error: {e}", flush=True)
+        return jsonify({"message": f"Error connecting to AI Coach: {str(e)}"}), 500
