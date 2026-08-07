@@ -105,7 +105,7 @@
     background-color: var(--nav-header-glass);
     backdrop-filter: blur(15px);
     -webkit-backdrop-filter: blur(15px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: none;
     top: 15px;
     width: 95%;
     max-width: 1200px;
@@ -193,6 +193,14 @@ section {
     align-items: center;
 }
 
+.nav-links .user-welcome {
+    color: var(--accent-green);
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    margin-right: 5px;
+}
+
 .nav-links a { /* Individual navigation link styling */
     font-weight: 600;
     padding: 5px 0;
@@ -261,9 +269,10 @@ section {
 
 /* Hero Section Styling */
 .hero-section {
-    background: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6))
-        ,url('https://images.pexels.com/photos/841130/pexels-photo-841130.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=750&w=1260') no-repeat center center/cover;
-    margin-top: 60px; /* Slight overlap with 65px header to ensure zero gap */
+    background-size: cover;
+    background-position: center center;
+    background-repeat: no-repeat;
+    margin-top: 65px; /* Sit perfectly flush under the navbar without any gap */
     color: #fff;
     padding: 80px 20px;
     min-height: 80vh;
@@ -1047,8 +1056,25 @@ transform: rotate(90deg) scale(1.2);}
 
 .chat-messages {
     overflow-y: auto;
-    
-    
+}
+
+/* Improve Markdown formatting inside chat bubbles */
+.chat-messages p {
+    margin: 0 0 8px 0;
+}
+.chat-messages p:last-child {
+    margin-bottom: 0;
+}
+.chat-messages ul, .chat-messages ol {
+    margin: 8px 0;
+    padding-left: 20px;
+}
+.chat-messages li {
+    margin-bottom: 4px;
+}
+.chat-messages strong {
+    color: inherit;
+    font-weight: 600;
 }
 
 
@@ -1460,6 +1486,33 @@ transform: rotate(90deg) scale(1.2);}
 
 @media (max-width: 768px) {
     .hero-section {
-        margin-top: 55px; /* Slight overlap with 59px mobile header to ensure zero gap */
+        margin-top: 60px; /* Sit perfectly flush on mobile */
     }
+}
+
+/* --- Chatbot Markdown Styles --- */
+.chat-markdown h1, 
+.chat-markdown h2, 
+.chat-markdown h3, 
+.chat-markdown h4 {
+    font-size: 1.1em;
+    margin: 5px 0;
+    font-weight: 600;
+}
+.chat-markdown p {
+    margin: 0 0 8px 0;
+}
+.chat-markdown ul, .chat-markdown ol {
+    margin: 5px 0 10px 15px;
+    padding-left: 0;
+}
+.chat-markdown table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 10px;
+}
+.chat-markdown th, .chat-markdown td {
+    border: 1px solid var(--border-color);
+    padding: 4px 8px;
+    font-size: 0.9em;
 }

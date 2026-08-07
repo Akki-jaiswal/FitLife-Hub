@@ -4,11 +4,10 @@ from sqlalchemy import func
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    tenant_id = db.Column(db.String(50), nullable=False, default="default_tenant")
     username = db.Column(db.String(20), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     phone_number = db.Column(db.String(20), nullable=True)
-    password = db.Column(db.String(60), nullable=False)
+    password = db.Column(db.String(255), nullable=False)
     
     # New Production-Ready Fields
     full_name = db.Column(db.String(100), nullable=True)
@@ -28,7 +27,6 @@ class User(db.Model):
 
 class Progress(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    tenant_id = db.Column(db.String(50), nullable=False, default="default_tenant")
     date = db.Column(db.DateTime(timezone=True), server_default=func.now())
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     
@@ -40,13 +38,13 @@ class Progress(db.Model):
     meal_name = db.Column(db.String(100), nullable=True)
     health_grade = db.Column(db.String(5), nullable=True)
     burn_off_tip = db.Column(db.Text, nullable=True)
+    image_hash = db.Column(db.String(64), nullable=True)
 
     def __repr__(self):
         return f"Progress('{self.date}', '{self.weight}kg')"
 
 class AIAnalysis(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    tenant_id = db.Column(db.String(50), nullable=False, default="default_tenant")
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     timestamp = db.Column(db.DateTime(timezone=True), server_default=func.now())
     
@@ -57,7 +55,6 @@ class AIAnalysis(db.Model):
 
 class Report(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    tenant_id = db.Column(db.String(50), nullable=False, default="default_tenant")
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     report_type = db.Column(db.String(50), nullable=False) # 'Weekly', 'Monthly'
     generated_date = db.Column(db.DateTime(timezone=True), server_default=func.now())
@@ -65,7 +62,6 @@ class Report(db.Model):
 
 class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    tenant_id = db.Column(db.String(50), nullable=False, default="default_tenant")
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True) # Nullable because non-users might send messages
     name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(120), nullable=False)

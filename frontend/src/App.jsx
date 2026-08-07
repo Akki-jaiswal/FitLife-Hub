@@ -1,21 +1,83 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useNavigate, Link } from 'react-router-dom';
 import Subscription from './pages/Subscription';
 import Checkout from './pages/Checkout';
+import WorkoutGenerator from './pages/WorkoutGenerator';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsOfService from './pages/TermsOfService';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 // Register Chart.js modules
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
 function AppContent() {
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
   const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [premiumUsesCount, setPremiumUsesCount] = useState(0);
   const [reportData, setReportData] = useState(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '' });
+  
+  // Rotating Hero Background Logic (A/B Testing / Dynamic Sets)
+  const setA = [
+    '/hero-1.webp',
+    '/Hero-2.webp',
+    '/Hero-3.webp',
+    '/Hero-4.webp',
+    '/Hero-5.webp',
+    '/Hero-6.webp',
+    '/Hero-13.webp'
+  ];
+  
+  const setB = [
+    '/hero-1.webp', // The common link (starts both sets)
+    '/Hero-7.webp',
+    '/Hero-8.webp',
+    '/Hero-9.webp',
+    '/Hero-10.webp',
+    '/Hero-11.webp',
+    '/Hero-12.webp',
+    '/Hero-13.webp'
+  ];
+
+  const [heroImages, setHeroImages] = useState(setA);
+  const [currentHeroImage, setCurrentHeroImage] = useState(0);
+
+  useEffect(() => {
+    // Check if the user has a designated "Hero Set" and when they got it
+    const savedSet = localStorage.getItem('assignedHeroSet');
+    const savedDate = localStorage.getItem('assignedHeroDate');
+    const today = new Date().toDateString();
+
+    let activeSet = setA;
+
+    // If they have a saved set from TODAY, keep showing it to them
+    if (savedSet && savedDate === today) {
+      activeSet = savedSet === 'B' ? setB : setA;
+    } else {
+      // If it's a new day, or their first time visiting, flip a coin!
+      const isSetB = Math.random() > 0.5;
+      activeSet = isSetB ? setB : setA;
+      
+      // Save their new assignment for the rest of the day
+      localStorage.setItem('assignedHeroSet', isSetB ? 'B' : 'A');
+      localStorage.setItem('assignedHeroDate', today);
+    }
+    
+    setHeroImages(activeSet);
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentHeroImage((prev) => (prev + 1) % heroImages.length);
+    }, 7000);
+    return () => clearInterval(interval);
+  }, [heroImages]);
+
   const [isDarkMode, setIsDarkMode] = useState(() => {
     // Check local storage so the theme persists on refresh
     return localStorage.getItem('theme') === 'dark';
@@ -36,7 +98,7 @@ function AppContent() {
     }
     setReportData({ report: "Coach Akki is calculating your trends...", avg_cal: '...', total_meals: '...' });
     
-    const response = await fetch('http://localhost:5000/generate_report', {
+    const response = await fetch(`${API_BASE}/generate_report`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ range }),
@@ -44,7 +106,7 @@ function AppContent() {
     });
     
     const data = await response.json();
-    if (response.status === 403 && (data.code === "LIMIT_EXCEEDED" || data.code === "UPGRADE_REQUIRED")) {
+    if ((response.status === 402 || response.status === 403) && (data.code === "LIMIT_EXCEEDED" || data.code === "UPGRADE_REQUIRED" || data.message === "UPGRADE_REQUIRED")) {
         navigate('/subscription');
         setReportData(null);
         return;
@@ -52,11 +114,7 @@ function AppContent() {
     if (response.ok) {
       setReportData(data);
       if (userTier === 'Free') {
-        setReportCount(prev => {
-          const next = prev + 1;
-          localStorage.setItem('reportCount', next);
-          return next;
-        });
+        setReportCount(prev => prev + 1);
       }
     } else {
       alert("Could not generate report.");
@@ -65,6 +123,7 @@ function AppContent() {
   // 1. Move Auth States to the top so other states can use them
   const [loggedInUser, setLoggedInUser] = useState(null);
   const [userTier, setUserTier] = useState('Free');
+  const [isGoogleFitConnected, setIsGoogleFitConnected] = useState(false);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState('login'); 
@@ -76,14 +135,23 @@ function AppContent() {
   const [isChatLoading, setIsChatLoading] = useState(false);
 
   useEffect(() => {
+    if (isChatOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'auto';
+    }
+    return () => { document.body.style.overflow = 'auto'; };
+  }, [isChatOpen]);
+
+  useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 50);
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
-  const [mealLogCount, setMealLogCount] = useState(() => parseInt(localStorage.getItem('mealLogCount') || '0'));
-  const [reportCount, setReportCount] = useState(() => parseInt(localStorage.getItem('reportCount') || '0'));
+  const [mealLogCount, setMealLogCount] = useState(0);
+  const [reportCount, setReportCount] = useState(0);
   const [chatMessages, setChatMessages] = useState(() => {
     const saved = localStorage.getItem('chatMessages');
     if (saved) {
@@ -108,6 +176,7 @@ function AppContent() {
   const [regPhone, setRegPhone] = useState('');
   const [authMessage, setAuthMessage] = useState(null);
   const [isAuthSuccess, setIsAuthSuccess] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const [progressData, setProgressData] = useState(null);
   const [historyData, setHistoryData] = useState([]);
@@ -120,8 +189,10 @@ function AppContent() {
   };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [chatMessages]); // Fires every time a new message is added
+    if (isChatOpen) {
+      setTimeout(() => scrollToBottom(), 100);
+    }
+  }, [chatMessages, isChatOpen]); // Fires every time a new message is added or chat is reopened
 
 
   const openModal = (mode) => {
@@ -150,14 +221,20 @@ function AppContent() {
     formData.append('meal_image', file);
 
     try {
-      const response = await fetch('http://localhost:5000/analyze_meal', {
+      const response = await fetch(`${API_BASE}/analyze_meal`, {
         method: 'POST',
         body: formData,
         credentials: 'include' 
       });
       
+      if (response.status === 429) {
+        alert("Whoa there! You've uploaded too many images too quickly. Please wait 1 minute for the cooldown before trying again.");
+        setIsAnalyzing(false);
+        return;
+      }
+      
       const result = await response.json();
-      if (response.status === 403 && (result.code === "LIMIT_EXCEEDED" || result.code === "UPGRADE_REQUIRED")) {
+      if ((response.status === 402 || response.status === 403) && (result.code === "LIMIT_EXCEEDED" || result.code === "UPGRADE_REQUIRED" || result.message === "UPGRADE_REQUIRED")) {
          navigate('/subscription');
          setIsAnalyzing(false);
          return;
@@ -166,12 +243,9 @@ function AppContent() {
       if (response.ok) {
           setAiResult(result);
           if (userTier === 'Free') {
-            setMealLogCount(prev => {
-              const next = prev + 1;
-              localStorage.setItem('mealLogCount', next);
-              return next;
-            });
+            setMealLogCount(prev => prev + 1);
           }
+          checkAuth(); 
           fetchProgress(); 
       } else {
           alert("AI Server error. Check your backend terminal!");
@@ -185,7 +259,7 @@ function AppContent() {
 
   const fetchProgress = async () => {
     try {
-      const response = await fetch('http://localhost:5000/get_progress', {
+      const response = await fetch(`${API_BASE}/get_progress`, {
         method: 'GET',
         credentials: 'include' 
       });
@@ -196,12 +270,12 @@ function AppContent() {
           setProgressData({
             labels: data.map(entry => entry.date),
             datasets: [{
-              label: 'Weight Progress (kg)',
-              data: data.map(entry => entry.weight),
-              borderColor: '#2ecc71',
-              backgroundColor: 'rgba(46, 204, 113, 0.2)',
+              label: 'Calories Tracked (kcal)',
+              data: data.map(entry => entry.calories || 0),
+              borderColor: '#e67e22',
+              backgroundColor: 'rgba(230, 126, 34, 0.2)',
               fill: true,
-              tension: 0.3
+              tension: 0.4
             }]
           });
         }
@@ -210,10 +284,9 @@ function AppContent() {
       console.error("Failed to fetch progress", error);
     }
   };
-  useEffect(() => {
   const checkAuth = async () => {
     try {
-      const response = await fetch('http://localhost:5000/check_session', {
+      const response = await fetch(`${API_BASE}/check_session`, {
         method: 'GET',
         credentials: 'include' // Required to send the session cookie
       });
@@ -221,14 +294,24 @@ function AppContent() {
         const data = await response.json();
         setLoggedInUser(data.username);
         setUserTier(data.tier || 'Free');
+        setMealLogCount(data.meal_logs_used || 0);
+        setReportCount(data.reports_used || 0);
         setPremiumUsesCount(data.premium_uses || 0);
+        setIsGoogleFitConnected(data.google_fit_connected || false);
+      } else {
+        localStorage.removeItem('chatMessages');
+        setChatMessages([{ sender: 'ai', text: "Hey! I'm Coach Akki. Please LogIn to start chatting with me!!!" }]);
       }
     } catch (error) {
       console.log("No active session found.");
-        }
-      };
-      checkAuth();
-    }, []);
+      localStorage.removeItem('chatMessages');
+      setChatMessages([{ sender: 'ai', text: "Hey! I'm Coach Akki. Please LogIn to start chatting with me!!!" }]);
+    }
+  };
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
 
   useEffect(() => {
     if (loggedInUser) {
@@ -243,33 +326,42 @@ function AppContent() {
     }
   }, [loggedInUser]);
 
-  const simulateSmartwatchSync = async () => {
+  const handleGoogleFitConnect = async () => {
     try {
-      const steps = Math.floor(Math.random() * (12000 - 3000 + 1) + 3000);
-      const calories = Math.floor(steps * 0.04);
+      setToast({ show: true, message: "Connecting to Google Fit..." });
+      setTimeout(() => setToast({ show: false, message: '' }), 3000);
       
-      // Sending payload to our new Apple HealthKit Webhook
-      const response = await fetch('http://localhost:5000/wearable/apple_health', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          data_type: 'sync',
-          steps: steps,
-          calories: calories,
-          timestamp: new Date().toISOString()
-        })
-      });
-
-      if (response.ok) {
-        setToast({ show: true, message: "Apple HealthKit Synced! (4,500 Steps)" });
-        fetchProgress();
-        setTimeout(() => setToast({ show: false, message: '' }), 2000);
+      const res = await fetch(`${API_BASE}/oauth/google/login`, {credentials: 'include'});
+      if (res.ok) {
+        const data = await res.json();
+        window.location.href = data.auth_url;
+      } else {
+         setToast({ show: true, message: "Please login first!" });
+         setTimeout(() => setToast({ show: false, message: '' }), 3000);
       }
-    } catch (error) {
-      setToast({ show: true, message: "Error syncing device." });
-      setTimeout(() => setToast({ show: false, message: '' }), 2000);
+    } catch (e) {
+      console.error(e);
+      setToast({ show: true, message: "Failed to reach backend." });
+      setTimeout(() => setToast({ show: false, message: '' }), 3000);
     }
+  };
+
+  const syncGoogleFitData = async () => {
+     try {
+       setToast({ show: true, message: "Pulling Data from Google Fit..." });
+       const res = await fetch(`${API_BASE}/wearable/sync`, {method: 'POST', credentials: 'include'});
+       const data = await res.json();
+       if (res.ok) {
+         setToast({ show: true, message: `Synced ${data.steps} steps from Google Fit!` });
+         fetchProgress();
+       } else {
+         setToast({ show: true, message: data.message || "Failed to sync" });
+       }
+       setTimeout(() => setToast({ show: false, message: '' }), 3000);
+     } catch(e) {
+         setToast({ show: true, message: "Network error during sync." });
+         setTimeout(() => setToast({ show: false, message: '' }), 3000);
+     }
   };
 
   // Function to handle the Contact Form submission
@@ -282,7 +374,7 @@ function AppContent() {
 
   console.log("Form Submission Triggered:", formData);
   try {
-    const response = await fetch('http://localhost:5000/send_message', {
+    const response = await fetch(`${API_BASE}/send_message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(formData)
@@ -306,7 +398,7 @@ function AppContent() {
   const handleLogin = async (e) => {
     e.preventDefault();
     try {
-      const response = await fetch('http://localhost:5000/login', {
+      const response = await fetch(`${API_BASE}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -332,7 +424,7 @@ function AppContent() {
   const handleRegister = async (e) => {
     e.preventDefault();
     try {
-      const response = await fetch('http://localhost:5000/register', {
+      const response = await fetch(`${API_BASE}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -358,7 +450,7 @@ function AppContent() {
 
     const handleUpgrade = async () => {
     try {
-      const response = await fetch('http://localhost:5000/upgrade_to_pro', {
+      const response = await fetch(`${API_BASE}/upgrade_to_pro`, {
         method: 'POST',
         credentials: 'include'
       });
@@ -386,7 +478,7 @@ function AppContent() {
 
   const handleLogout = async () => {
     try{
-    const response = await fetch('http://localhost:5000/logout', { method: 'POST',credentials: 'include' });
+    const response = await fetch(`${API_BASE}/logout`, { method: 'POST',credentials: 'include' });
       if (response.ok) {
       // 1. Reset all local states immediately
         setLoggedInUser(null);
@@ -394,12 +486,16 @@ function AppContent() {
         setProgressData(null);
         setHistoryData([]);
         setAiResult(null);
+        setIsGoogleFitConnected(false);
 
       // 2. Reset Coach Akki's welcome message
       localStorage.removeItem('chatMessages');
       setChatMessages([
         { sender: 'ai', text: "Hey! I'm Coach Akki. Please LogIn to start chatting with me!!!" }
       ]);
+      
+      // 3. Dispatch a global logout event so other components can clear their sensitive persistent state
+      window.dispatchEvent(new Event('userLoggedOut'));
       }
     } catch (error) {
       console.error("Logout failed:", error);
@@ -431,7 +527,7 @@ function AppContent() {
 
     try {
       // 3. Call the backend with message and history
-      const response = await fetch('http://localhost:5000/chat_with_ai', {
+      const response = await fetch(`${API_BASE}/chat_with_ai`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: currentInput, history: chatMessages }),
@@ -462,19 +558,15 @@ function AppContent() {
       {/* Header-Section */}
 <header id="top" className={`header ${isScrolled ? 'scrolled' : ''}`}>
   <div className="header-container">
-    <h1 className="logo">FitLife Hub</h1>
+    <h1 className="logo" onClick={() => { navigate('/'); window.scrollTo(0,0); }} style={{ cursor: 'pointer' }}>FitLife Hub</h1>
     
     {/* Desktop Navigation Links (Visible when NOT scrolled) */}
     <div className="desktop-nav">
       <ul className="nav-links">
         <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("hero"); setIsMenuOpen(false); }}>Home</a></li>
-        <li onClick={() => { setIsMenuOpen(false); navigate('/subscription'); }} style={{cursor: 'pointer'}}><span style={{color: '#f1c40f', fontWeight: 'bold'}}>💎 Premium</span></li>
-        <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("quotes"); setIsMenuOpen(false); }}>Quotes</a></li>
-        <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("benefits"); setIsMenuOpen(false); }}>Benefits</a></li>
         <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("tracker"); setIsMenuOpen(false); }}>Tracker</a></li>
-        <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("testimonials"); setIsMenuOpen(false); }}>Testimonials</a></li>
-        <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("contact"); setIsMenuOpen(false); }}>Contact</a></li>
-        <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("faq"); setIsMenuOpen(false); }}>FAQ</a></li>
+        <li><a href="#" onClick={(e) => { e.preventDefault(); navigate('/workout'); setIsMenuOpen(false); }}>AI Workouts</a></li>
+        <li onClick={() => { setIsMenuOpen(false); navigate('/subscription'); }} style={{cursor: 'pointer'}}><span style={{color: '#f1c40f', fontWeight: 'bold'}}>💎 Premium</span></li>
         
         <li>
           <button onClick={() => { toggleTheme(); setIsMenuOpen(false); }} className="theme-toggle-btn">
@@ -522,6 +614,7 @@ function AppContent() {
   <button className="close-drawer" onClick={() => setIsMenuOpen(false)}>×</button>
   <ul className="nav-links">
       <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("hero"); }}>Home</a></li>
+      <li><a href="#" onClick={(e) => { e.preventDefault(); navigate('/workout'); setIsMenuOpen(false); }}>AI Workouts</a></li>
       <li onClick={() => { setIsMenuOpen(false); navigate('/subscription'); }} style={{cursor: 'pointer'}}><span style={{color: '#f1c40f', fontWeight: 'bold'}}>💎 Premium</span></li>
       <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("quotes"); }}>Quotes</a></li>
       <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("benefits"); }}>Benefits</a></li>
@@ -556,7 +649,10 @@ function AppContent() {
       <Routes>
         <Route path="/" element={
           <>
-            <section id="hero" className="hero-section">
+            <section id="hero" className="hero-section" style={{
+              backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url('${heroImages[currentHeroImage]}')`,
+              transition: 'background-image 1s ease-in-out'
+            }}>
         <div className="hero-content">
           <h2>Unlock Your Full Potential</h2>
           <p>Your journey to a healthier, stronger you starts here. Get motivated, track progress, and discover benefits</p>
@@ -618,25 +714,35 @@ function AppContent() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '40px' }}>
               <div style={{ padding: '20px', border: '2px solid #f0f0f0', borderRadius: '15px', textAlign: 'center' }}>
                 <div style={{ fontSize: '2em', marginBottom: '10px' }}>⌚</div>
-                <h4 style={{ margin: '0 0 15px 0' }}>Wearable Sync</h4>
-                <button onClick={simulateSmartwatchSync} className="btn primary-btn" style={{ backgroundColor: '#3498db', width: '100%', cursor: 'pointer', border: '2px solid #079bfd' }}>
-                  Sync Watch Data
-                </button>
+                <h4 style={{ margin: '0 0 15px 0' }}>Google Fit Sync</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <button onClick={handleGoogleFitConnect} className="btn primary-btn" style={{ backgroundColor: 'var(--bg-main)', color: isGoogleFitConnected ? '#2ecc71' : 'var(--text-main)', width: '100%', cursor: 'pointer', border: isGoogleFitConnected ? '2px solid #2ecc71' : '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '1.2em' }}>🔗</span> {isGoogleFitConnected ? "Connected ✅" : "Connect Google Fit"}
+                  </button>
+                  <button onClick={syncGoogleFitData} className="btn primary-btn" style={{ backgroundColor: '#3498db', color: '#fff', width: '100%', cursor: 'pointer', border: 'none' }}>
+                    Pull Cloud Data
+                  </button>
+                </div>
               </div>
 
               <div style={{ padding: '20px', border: '2px solid #2ecc71', borderRadius: '15px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                 <div style={{ fontSize: '2em', marginBottom: '5px' }}>🥗</div>
-                <h4 style={{ margin: '0 15px 0' }}>AI Meal Logger</h4>
+                <h4 style={{ margin: '0 15px 0' }}>AI Meal Logger {userTier === 'Free' ? `(${3 - mealLogCount} free ${3 - mealLogCount === 1 ? 'use' : 'uses'} left)` : ''}</h4>
                 
-                {/* FIXED: Wrapper now correctly contains the label for centering */}
+                {/* Unified Camera/Browse Button as requested */}
                 <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
                   <label className="btn primary-btn" style={{ 
                     backgroundColor: '#2ecc71', 
                     width: '100%', 
-                    maxWidth: '200px', // Prevents it from being too wide on split screen
+                    maxWidth: '200px',
                     cursor: 'pointer', 
                     display: 'block',
                     textAlign: 'center'
+                  }} onClick={(e) => {
+                    if (userTier === 'Free' && mealLogCount >= 3) {
+                      e.preventDefault();
+                      navigate('/subscription');
+                    }
                   }}>
                     {isAnalyzing ? "AI Analyzing..." : "Camera / Browse"}
                     <input type="file" accept="image/*" capture="environment" onChange={handleMealInput} style={{ display: 'none' }} />
@@ -699,7 +805,7 @@ function AppContent() {
 
             {/* --- STRATEGIC ANALYTICS SECTION --- */}
             <div className="card-3d glow-effect" style={{ marginTop: '30px', padding: '30px' }}>
-              <h3 style={{ color: '#2ecc71', marginBottom: '5px', fontSize: '1.2em' }}>📊 Strategic Analytics {userTier === 'Free' ? `🔒 (${7 - premiumUsesCount} free uses left)` : '💎'}</h3>
+              <h3 style={{ color: '#2ecc71', marginBottom: '5px', fontSize: '1.2em' }}>📊 Strategic Analytics {userTier === 'Free' ? `(${7 - reportCount} free ${7 - reportCount === 1 ? 'use' : 'uses'} left)` : ''}</h3>
               <p style={{ fontSize: '0.85em', color: 'var(--text-muted)', marginBottom: '12px' }}>
                 Generate a deep-dive analysis of your habits over the last week or month.
               </p>
@@ -726,7 +832,7 @@ function AppContent() {
                 </div>
                 <button
                   onClick={async () => {
-                    const response = await fetch('http://localhost:5000/download_report', {
+                    const response = await fetch(`${API_BASE}/download_report`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify(reportData),
@@ -853,12 +959,15 @@ function AppContent() {
         } />
         <Route path="/subscription" element={<Subscription userTier={userTier} handleUpgrade={handleUpgrade} handleContactSubmit={handleContactSubmit} loggedInUser={loggedInUser} />} />
         <Route path="/checkout" element={<Checkout userTier={userTier} loggedInUser={loggedInUser} />} />
+        <Route path="/workout" element={<WorkoutGenerator userTier={userTier} loggedInUser={loggedInUser} API_BASE={API_BASE} />} />
+        <Route path="/privacy" element={<PrivacyPolicy />} />
+        <Route path="/terms" element={<TermsOfService />} />
       </Routes>
       <footer className="footer">
         <p>© 2026 FitLife Hub. All rights reserved.</p>
         <div className="footer-links" style={{ marginTop: '10px' }}>
-          <a href="#top" style={{ margin: '0 10px', color: '#2bd149', textDecoration: 'none', fontSize: '0.9em' }}>Privacy Policy</a>
-          <a href="#top" style={{ margin: '0 10px', color: '#25d545', textDecoration: 'none', fontSize: '0.9em' }}>Terms of Service</a>
+          <Link to="/privacy" style={{ margin: '0 10px', color: '#2bd149', textDecoration: 'none', fontSize: '0.9em' }}>Privacy Policy</Link>
+          <Link to="/terms" style={{ margin: '0 10px', color: '#25d545', textDecoration: 'none', fontSize: '0.9em' }}>Terms of Service</Link>
         </div>
       </footer>
 
@@ -892,7 +1001,16 @@ function AppContent() {
         <form className="contact-form modal-form" onSubmit={handleLogin}>
           <h3>Welcome Back</h3>
           <input type="text" placeholder="Username or Email" value={loginIdentifier} onChange={(e) => setLoginIdentifier(e.target.value)} required />
-          <input type="password" placeholder="Password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} required />
+          <div style={{ position: 'relative', width: '100%' }}>
+            <input type={showPassword ? "text" : "password"} placeholder="Password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} required style={{ width: '100%', paddingRight: '40px' }} />
+            <button type="button" onMouseEnter={() => setShowPassword(true)} onMouseLeave={() => setShowPassword(false)} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', width: 'auto', margin: 0, padding: 0, display: 'flex' }}>
+              {showPassword ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              )}
+            </button>
+          </div>
           <button type="submit" className="btn primary-btn">Login</button>
         </form>
       ) : (
@@ -901,7 +1019,16 @@ function AppContent() {
           <input type="text" placeholder="Choose Username" value={regUsername} onChange={(e) => setRegUsername(e.target.value)} required />
           <input type="email" placeholder="Enter Email" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} required />
           <input type="tel" placeholder="WhatsApp Number (+91...)" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} required />
-          <input type="password" placeholder="Create Password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} required />
+          <div style={{ position: 'relative', width: '100%' }}>
+            <input type={showPassword ? "text" : "password"} placeholder="Create Password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} required style={{ width: '100%', paddingRight: '40px' }} />
+            <button type="button" onMouseEnter={() => setShowPassword(true)} onMouseLeave={() => setShowPassword(false)} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', width: 'auto', margin: 0, padding: 0, display: 'flex' }}>
+              {showPassword ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              )}
+            </button>
+          </div>
           <button type="submit" className="btn primary-btn">Sign Up</button>
         </form>
       )}
@@ -940,23 +1067,33 @@ function AppContent() {
 
   {/* 2. Chat Window Logic */}
   {isChatOpen && (
+    <>
+      <div 
+        onClick={() => { setIsChatOpen(false); setIsFullScreen(false); }} 
+        style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          zIndex: 1999,
+          background: 'transparent'
+        }}
+      />
     <div style={{ 
-      position: 'fixed', 
-      top: isFullScreen ? '74px' : 'auto', 
-      bottom: isFullScreen ? '0' : (window.innerWidth < 480 ? '20px' : '20px'), 
-      right: isFullScreen ? '0' : (window.innerWidth < 480 ? '10px' : '30px'), 
-      width: isFullScreen ? '100vw' : (window.innerWidth < 480 ? '90vw' : '350px'), 
-      height: isFullScreen ? 'calc(100vh - 74px)' : (window.innerWidth < 480 ? '70vh' : '500px'), 
-      background: 'var(--bg-card)', 
-      borderRadius: isFullScreen ? '0' : '15px', 
-      boxShadow: '0 15px 45px rgba(79, 62, 62, 0.5)', 
-      display: 'flex', 
-      flexDirection: 'column', 
-      border: isFullScreen ? 'none' : '0.5px solid #54946c',
-      zIndex: 2000,
-      overflow: 'hidden',
-      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' 
-    }}>
+        position: 'fixed', 
+        top: isFullScreen ? (isScrolled ? '92px' : '82px') : 'auto', 
+        bottom: isFullScreen ? '12px' : (window.innerWidth < 480 ? '20px' : '20px'), 
+        right: window.innerWidth < 480 ? '10px' : '30px', 
+        width: window.innerWidth < 480 ? (isFullScreen ? 'calc(100vw - 20px)' : 'calc(100vw - 20px)') : (isFullScreen ? 'calc(100vw - 60px)' : '350px'), 
+        height: isFullScreen ? 'auto' : (window.innerWidth < 480 ? '70dvh' : '500px'), 
+        background: 'var(--bg-card)', 
+        borderRadius: '15px', 
+        boxShadow: '0 15px 45px rgba(0,0,0,0.6)', 
+        display: 'flex', 
+        flexDirection: 'column', 
+        border: '0.5px solid #54946c',
+        zIndex: 2000,
+        overflow: 'hidden',
+        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' 
+      }}>
       {/* High-Visibility Header */}
       <div style={{ 
         padding: '15px', 
@@ -984,7 +1121,9 @@ function AppContent() {
           {chatMessages.map((msg, i) => (
             <div key={i} style={{ alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start', background: msg.sender === 'user' ? 'var(--chat-user-bg)' : 'var(--chat-ai-bg)', color: msg.sender === 'user' ? 'var(--chat-user-text)' : 'var(--chat-ai-text)', padding: '10px 15px', borderRadius: '15px', maxWidth: '85%', fontSize: '0.9em', boxShadow: '0 2px 5px rgba(0,0,0,0.5)', lineHeight: '1.6' }}>
               {msg.sender === 'ai' ? (
-                <ReactMarkdown>{msg.text}</ReactMarkdown>
+                <div className="chat-markdown">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown>
+                </div>
               ) : (
                 <span style={{ whiteSpace: 'pre-line' }}>{msg.text}</span>
               )}
@@ -1004,6 +1143,7 @@ function AppContent() {
         <button type="submit" style={{ background: 'none', border: 'none', fontSize: '1.3em', cursor: 'pointer' }}>🚀</button>
       </form>
     </div>
+    </>
   )}
 </div>
               </>
@@ -1012,10 +1152,46 @@ function AppContent() {
 
 
 
+function OAuthCallback() {
+  const navigate = useNavigate();
+  
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
+    
+    if (code) {
+      fetch(`${API_BASE}/oauth/google/callback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ code })
+      })
+      .then(res => res.json())
+      .then(data => {
+        window.location.href = '/?oauth_success=true';
+      })
+      .catch(err => {
+        window.location.href = '/?oauth_error=true';
+      });
+    }
+  }, [navigate]);
+
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', flexDirection: 'column', color: 'var(--text-main)' }}>
+      <h2 style={{ color: '#3498db' }}>Connecting to Google Fit...</h2>
+      <p>Securely exchanging tokens. Please wait.</p>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <Router>
-      <AppContent />
+      <Routes>
+        <Route path="/oauth/callback" element={<OAuthCallback />} />
+        <Route path="*" element={<AppContent />} />
+      </Routes>
     </Router>
   );
 }

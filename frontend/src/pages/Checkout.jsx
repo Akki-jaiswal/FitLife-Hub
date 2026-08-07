@@ -2,22 +2,32 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const Checkout = ({ userTier, loggedInUser }) => {
+  const API_BASE = `http://${window.location.hostname}:5000`;
   const navigate = useNavigate();
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [utr, setUtr] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('card');
+  const [isFlipped, setIsFlipped] = useState(false);
+
+  const validUntilDate = new Date();
+  validUntilDate.setMonth(validUntilDate.getMonth() + 1);
+  const formattedDate = validUntilDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
   // Protect route
   useEffect(() => {
     window.scrollTo(0, 0);
-    if (!loggedInUser) {
-      alert('Please login first to access checkout.');
-      navigate('/');
-    } else if (userTier === 'Pro') {
-      navigate('/');
-    }
-  }, [userTier, navigate]);
+    const timeoutId = setTimeout(() => {
+      if (!loggedInUser) {
+        alert('Please login first to access checkout.');
+        navigate('/');
+      } else if (userTier === 'Pro') {
+        alert('You are already a Pro member! Enjoy your premium features.');
+        navigate('/');
+      }
+    }, 800); // Give checkAuth time to resolve on a hard refresh
+    
+    return () => clearTimeout(timeoutId);
+  }, [userTier, loggedInUser, navigate]);
 
   const handleCheckoutSubmit = async (e) => {
     e.preventDefault();
@@ -25,11 +35,11 @@ const Checkout = ({ userTier, loggedInUser }) => {
     setErrorMsg('');
 
     try {
-      const response = await fetch('http://localhost:5000/process_payment', {
+      const response = await fetch(`${API_BASE}/process_payment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ paymentMethod, utr })
+        body: JSON.stringify({ paymentMethod: 'upi', utr })
       });
       
       const data = await response.json();
@@ -61,116 +71,65 @@ const Checkout = ({ userTier, loggedInUser }) => {
           <p style={{ color: 'var(--text-muted)', marginBottom: '30px' }}>Enter your payment details below to unlock FitLife Pro.</p>
 
           
-          {/* Payment Method Toggle - Large Professional Size */}
-          <div style={{ display: 'flex', gap: '20px', marginBottom: '40px' }}>
-            <button 
-              onClick={() => setPaymentMethod('card')}
+          {/* 3D Flipping QR Code Area */}
+          <form onSubmit={handleCheckoutSubmit} style={{ textAlign: 'center', width: '100%' }}>
+            <div 
+              onClick={() => { if (!isFlipped) setIsFlipped(true); }}
               style={{ 
-                flex: 1, 
-                padding: '30px 20px', 
-                borderRadius: '15px', 
-                border: paymentMethod === 'card' ? '3px solid #2ecc71' : '2px solid var(--border-color)', 
-                background: paymentMethod === 'card' ? 'rgba(46, 204, 113, 0.05)' : 'var(--bg-tertiary)', 
-                color: 'var(--text-main)', 
-                fontSize: '1.4em', 
-                fontWeight: 'bold', 
-                cursor: 'pointer', 
-                transition: 'all 0.2s ease',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '10px',
-                boxShadow: paymentMethod === 'card' ? '0 10px 20px rgba(46, 204, 113, 0.15)' : 'none'
+                perspective: '1000px', 
+                width: '220px', 
+                height: '220px', 
+                margin: '0 auto 15px', 
+                cursor: isFlipped ? 'default' : 'pointer' 
+              }}
+            >
+              <div style={{
+                width: '100%', height: '100%', position: 'relative',
+                transition: 'transform 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
+                transformStyle: 'preserve-3d',
+                transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)'
               }}>
-              <span style={{ fontSize: '1.8em' }}>💳</span>
-              Credit / Debit Card
-            </button>
-            
-            <button 
-              onClick={() => setPaymentMethod('upi')}
-              style={{ 
-                flex: 1, 
-                padding: '30px 20px', 
-                borderRadius: '15px', 
-                border: paymentMethod === 'upi' ? '3px solid #2ecc71' : '2px solid var(--border-color)', 
-                background: paymentMethod === 'upi' ? 'rgba(46, 204, 113, 0.05)' : 'var(--bg-tertiary)', 
-                color: 'var(--text-main)', 
-                fontSize: '1.4em', 
-                fontWeight: 'bold', 
-                cursor: 'pointer', 
-                transition: 'all 0.2s ease',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '10px',
-                boxShadow: paymentMethod === 'upi' ? '0 10px 20px rgba(46, 204, 113, 0.15)' : 'none'
-              }}>
-              <span style={{ fontSize: '1.8em' }}>📱</span>
-              UPI App (QR Code)
-            </button>
-          </div>
-
-          {errorMsg && <div style={{ background: 'rgba(231, 76, 60, 0.1)', color: '#e74c3c', padding: '10px', borderRadius: '5px', marginBottom: '20px', border: '1px solid #e74c3c' }}>{errorMsg}</div>}
-
-          {paymentMethod === 'card' ? (
-          <form onSubmit={handleCheckoutSubmit} className="contact-form" autoComplete="off">
-            <label style={{ color: 'var(--text-main)', fontSize: '0.9em', fontWeight: 'bold' }}>Cardholder Name</label>
-            <input type="text" placeholder={loggedInUser || "John Doe"} autoComplete="new-password" required style={{ marginBottom: '20px' }} />
-
-            <label style={{ color: 'var(--text-main)', fontSize: '0.9em', fontWeight: 'bold' }}>Card Number</label>
-            <div style={{ position: 'relative', marginBottom: '20px' }}>
-              <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', fontSize: '1.2em' }}>💳</span>
-              <input type="text" placeholder="4242 4242 4242 4242" autoComplete="new-password"  required style={{ paddingLeft: '45px' }} />
-            </div>
-
-            <div style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ color: 'var(--text-main)', fontSize: '0.9em', fontWeight: 'bold' }}>Expiry Date</label>
-                <input 
-                  type="text" 
-                  defaultValue={
-                    String(new Date(new Date().setMonth(new Date().getMonth() + 1)).getMonth() + 1).padStart(2, '0') + 
-                    '/' + 
-                    String(new Date(new Date().setMonth(new Date().getMonth() + 1)).getFullYear()).slice(-2)
-                  } 
-                  autoComplete="new-password" 
-                  required 
-                />
+                {/* Front Face: Tap to Reveal Button */}
+                <div style={{
+                  position: 'absolute', width: '100%', height: '100%', backfaceVisibility: 'hidden',
+                  background: 'rgba(46, 204, 113, 0.05)', border: '3px dashed #2ecc71', borderRadius: '20px',
+                  display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', 
+                  color: 'var(--text-main)', boxShadow: '0 10px 25px rgba(46,204,113,0.2)'
+                }}>
+                  <span style={{ fontSize: '4em', marginBottom: '10px' }}>📱</span>
+                  <h3 style={{ margin: 0, fontSize: '1.4em', color: 'var(--text-heading)' }}>Reveal QR Code</h3>
+                  <p style={{ margin: '5px 0 0', fontSize: '0.9em', color: 'var(--text-muted)' }}>UPI Payment</p>
+                </div>
+                
+                {/* Back Face: Actual QR Code */}
+                <div style={{
+                  position: 'absolute', width: '100%', height: '100%', backfaceVisibility: 'hidden',
+                  background: '#ffffff', border: '3px solid #2ecc71', borderRadius: '20px', padding: '15px',
+                  transform: 'rotateY(180deg)', boxShadow: '0 15px 30px rgba(0,0,0,0.15)',
+                  display: 'flex', justifyContent: 'center', alignItems: 'center'
+                }}>
+                  <img 
+                    src="https://upload.wikimedia.org/wikipedia/commons/d/d0/QR_code_for_mobile_English_Wikipedia.svg" 
+                    alt="Scan to Pay via UPI" 
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} 
+                  />
+                </div>
               </div>
             </div>
-
-            <button type="submit" className="btn primary-btn" disabled={isProcessing} style={{ width: '100%', fontSize: '1.2em', padding: '15px', position: 'relative' }}>
-              {isProcessing ? 'Processing Payment...' : 'Pay $9.00'}
-            </button>
-            <p style={{ textAlign: 'center', fontSize: '0.8em', color: 'var(--text-muted)', marginTop: '15px' }}>
-              🔒 256-bit SSL Encrypted Secure Checkout
-            </p>
-          </form>
-          ) : (
-          <form onSubmit={handleCheckoutSubmit} className="contact-form" style={{ textAlign: 'center' }}>
-            <div style={{ background: '#fff', padding: '20px', borderRadius: '15px', display: 'inline-block', marginBottom: '20px', border: '2px dashed #2ecc71' }}>
-              {/* Actual QR Code Image */}
-              <img 
-                src="https://upload.wikimedia.org/wikipedia/commons/d/d0/QR_code_for_mobile_English_Wikipedia.svg" 
-                alt="Scan to Pay via UPI" 
-                style={{ width: '200px', height: '200px', objectFit: 'contain', display: 'block' }} 
-              />
-            </div>
             
-            <h3 style={{ color: 'var(--text-heading)', marginBottom: '10px' }}>Scan to Pay</h3>
-            <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>Use Google Pay, PhonePe, Paytm, or any UPI app.</p>
+            <h3 style={{ color: 'var(--text-heading)', marginBottom: '5px' }}>Scan to Pay</h3>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '15px' }}>Use Google Pay, PhonePe, Paytm, or any UPI app.</p>
             
-            <div style={{ marginBottom: '25px', textAlign: 'left' }}>
+            <div style={{ marginBottom: '25px', textAlign: 'center' }}>
               <label style={{ color: 'var(--text-main)', fontSize: '0.9em', fontWeight: 'bold' }}>12-Digit UTR / Transaction ID</label>
-              <input type="text" value={utr} onChange={(e) => setUtr(e.target.value)} placeholder="e.g. 312345678901" required style={{ width: '100%', padding: '12px', marginTop: '8px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)' }} />
+              <input type="text" value={utr} onChange={(e) => setUtr(e.target.value)} placeholder="e.g. 312345678901" required style={{ width: '100%', maxWidth: '300px', padding: '12px', marginTop: '8px', marginBottom: '8px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', textAlign: 'center', display: 'block', marginLeft: 'auto', marginRight: 'auto' }} />
               <p style={{ fontSize: '0.8em', color: 'var(--text-muted)', marginTop: '5px' }}>Enter the reference number from your UPI app so we can verify the funds.</p>
             </div>
             
-            <button type="submit" className="btn primary-btn" disabled={isProcessing} style={{ width: '100%', fontSize: '1.2em', padding: '15px', background: '#27ae60', color: 'white' }}>
-              {isProcessing ? 'Connecting to Bank Gateway...' : 'Verify UPI Payment'}
+            <button type="submit" className="btn primary-btn" disabled={isProcessing} style={{ width: '100%', maxWidth: '300px', fontSize: '1.2em', padding: '15px', background: '#27ae60', color: 'white', margin: '0 auto', display: 'block' }}>
+              {isProcessing ? 'Connecting...' : 'Verify UPI Payment'}
             </button>
           </form>
-          )}
         </div>
 
         {/* RIGHT COLUMN: Order Summary */}
@@ -187,7 +146,7 @@ const Checkout = ({ userTier, loggedInUser }) => {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', color: 'var(--text-main)' }}>
             <span>Valid Until</span>
-            <span style={{ color: '#2ecc71', fontWeight: 'bold' }}>July 22, 2026</span>
+            <span style={{ color: '#2ecc71', fontWeight: 'bold' }}>{formattedDate}</span>
           </div>
           
           <div style={{ borderTop: '1px dashed var(--border-color)', margin: '20px 0' }}></div>

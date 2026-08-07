@@ -13,7 +13,7 @@ def analyze_fitness_query(user_query, history=None, user_context=""):
     if history is None:
         history = []
         
-    system_prompt = "You are a professional fitness coach. Provide a concise, expert answer to the user's fitness query. Use markdown formatting to make your responses visually appealing."
+    system_prompt = "You are a professional fitness coach. Provide a concise, expert answer to the user's fitness query. Use markdown formatting to make your responses visually appealing, but DO NOT generate markdown tables. Use bulleted or numbered lists instead of tables for diet plans and schedules."
     if user_context:
         system_prompt += f" Here is the user's recent logged data to help you personalize your answer. DO NOT ask them for their data, you already have it: {user_context}"
     
@@ -27,13 +27,13 @@ def analyze_fitness_query(user_query, history=None, user_context=""):
         messages = [{"role": "system", "content": system_prompt}]
         for msg in history:
             # Skip welcome message or empty messages
-            if msg.get('text') and "Please LogIn" not in msg.get('text'):
+            if msg.get('text') and "Please LogIn" not in msg.get('text') and "Welcome back" not in msg.get('text'):
                 role = 'user' if msg.get('sender') == 'user' else 'assistant'
                 messages.append({"role": role, "content": msg.get('text')})
         messages.append({"role": "user", "content": user_query})
         
         payload = {
-            "model": "llama3-8b-8192",
+            "model": "llama-3.1-8b-instant",
             "messages": messages
         }
         # We set a low timeout to fail fast
@@ -43,7 +43,7 @@ def analyze_fitness_query(user_query, history=None, user_context=""):
             data = response.json()
             return data['choices'][0]['message']['content']
         else:
-            raise Exception(f"Groq API returned {response.status_code}")
+            raise Exception(f"Groq API returned {response.status_code}: {response.text}")
             
     except Exception as e:
         print(f"Groq Failover Triggered! Error: {e}. Falling back to Google Gemini...")
@@ -56,7 +56,7 @@ def analyze_fitness_query(user_query, history=None, user_context=""):
                 
         # Fallback to Google Gemini
         try:
-            model = genai.GenerativeModel('gemini-3.5-flash', system_instruction=system_prompt)
+            model = genai.GenerativeModel('gemini-2.5-flash', system_instruction=system_prompt)
             chat = model.start_chat(history=gemini_history)
             response = chat.send_message(user_query)
             return response.text
@@ -72,7 +72,7 @@ def analyze_meal_image(image_bytes, mime_type="image/jpeg"):
     system_prompt = "You are a professional fitness coach and nutritionist. Analyze the image of the meal provided by the user. Return ONLY a valid JSON object with the following structure, and nothing else: {\"meal_name\": \"Name\", \"calories\": 450, \"health_grade\": \"A, B, C, D, or F\", \"burn_off_tip\": \"short tip\"}. If there is no meal in the image, return a JSON object with meal_name as 'Not a meal'."
     
     try:
-        model = genai.GenerativeModel('gemini-3.5-flash', system_instruction=system_prompt)
+        model = genai.GenerativeModel('gemini-2.5-flash', system_instruction=system_prompt)
         prompt = "Analyze this meal image and return the JSON."
         
         # Open with PIL

@@ -10,6 +10,8 @@ import threading
 import os
 from twilio.rest import Client
 import json
+import requests
+from urllib.parse import urlencode
 
 from ..extensions import db, cache, limiter
 from ..models import Progress, User
@@ -79,17 +81,45 @@ def analyze_meal():
     if not file:
         return jsonify({"message": "No image provided"}), 400
         
+    if user.subscription_tier == 'Free':
+        from ..models import Progress
+        meals_used = Progress.query.filter(Progress.user_id == user.id, Progress.meal_name != None).count()
+        if meals_used >= 3:
+            return jsonify({"message": "UPGRADE_REQUIRED", "reason": "Free limit reached (3/3 AI Meal Logs)."}), 402
+        
+        
     image_bytes = file.read()
     mime_type = file.mimetype or "image/jpeg"
     
-    from ..services.ai_service import analyze_meal_image
-    ai_data = analyze_meal_image(image_bytes, mime_type)
+    import hashlib
+    import random
+    from ..models import Progress
+    
+    image_hash = hashlib.md5(image_bytes).hexdigest()
+    recent_meals = Progress.query.filter_by(user_id=user.id).order_by(Progress.date.desc()).limit(7).all()
+    duplicate_meal = next((m for m in recent_meals if m.image_hash == image_hash), None)
+    
+    if duplicate_meal and duplicate_meal.meal_name and 'unrecognized' not in duplicate_meal.meal_name.lower() and 'unknown' not in duplicate_meal.meal_name.lower():
+        base_cals = duplicate_meal.calories or 0
+        variation = random.randint(int(-base_cals * 0.05), int(base_cals * 0.05)) if base_cals else 0
+        new_cals = max(0, base_cals + variation)
+        
+        ai_data = {
+            "meal_name": duplicate_meal.meal_name,
+            "calories": new_cals,
+            "health_grade": duplicate_meal.health_grade,
+            "burn_off_tip": duplicate_meal.burn_off_tip
+        }
+    else:
+        from ..services.ai_service import analyze_meal_image
+        ai_data = analyze_meal_image(image_bytes, mime_type)
     
     new_entry = Progress(
         meal_name=ai_data.get('meal_name', 'Unknown Meal'),
         calories=ai_data.get('calories', 0),
         health_grade=ai_data.get('health_grade', 'N/A'),
         burn_off_tip=ai_data.get('burn_off_tip', ''),
+        image_hash=image_hash,
         user_id=session['user_id']
     )
     
@@ -116,6 +146,12 @@ def generate_report():
         
     data = request.get_json() or {}
     range_days = int(data.get('range', 7))
+    
+    if user.subscription_tier == 'Free':
+        from ..models import Report
+        reports_used = Report.query.filter(Report.user_id == user.id).count()
+        if reports_used >= 7:
+            return jsonify({"message": "UPGRADE_REQUIRED", "reason": "Free limit reached (7/7 Strategic Analytics)."}), 402
     
     cutoff_date = datetime.utcnow() - timedelta(days=range_days)
     progress_logs_query = Progress.query.filter(Progress.user_id == user.id, Progress.date >= cutoff_date).order_by(Progress.date.desc()).all()
@@ -145,6 +181,36 @@ def generate_report():
         report_text = report_text.replace('**', '').replace('*', '')
     except Exception as e:
         report_text = f"Based on your recent logs, you have consumed an average of {avg_cal} kcal over {total_meals} meals tracked. Keep focusing on balanced nutrition to reach your goals faster!"
+        
+    # Send Report via WhatsApp (Twilio)
+    if user.phone_number:
+        try:
+            import os
+            from twilio.rest import Client
+            TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', 'mock_sid')
+            TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', 'mock_token')
+            TWILIO_WHATSAPP_NUMBER = os.environ.get('TWILIO_WHATSAPP_NUMBER', 'whatsapp:+14155238886')
+            
+            wa_phone = user.phone_number.strip().replace(" ", "")
+            if not wa_phone.startswith('+'):
+                wa_phone = '+' + wa_phone
+            wa_phone = f"whatsapp:{wa_phone}"
+            
+            if TWILIO_ACCOUNT_SID != 'mock_sid':
+                client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+                report_msg = f"📊 *Your FitLife {period}ly Report* 📊\n\n{report_text}\n\n- Avg Steps: {avg_steps}\n- Avg Calories: {avg_cal} kcal"
+                client.messages.create(body=report_msg, from_=TWILIO_WHATSAPP_NUMBER, to=wa_phone)
+                print(f"Twilio WhatsApp Report sent to {wa_phone}!")
+            else:
+                print(f"Mock Twilio WhatsApp Report Sent to {wa_phone}")
+        except Exception as e:
+            print(f"Failed to send Twilio WhatsApp Report: {e}")
+    
+    # Record report generation for tracking
+    from ..models import Report
+    new_report = Report(user_id=user.id, report_type=f"{period}ly", content_summary=report_text[:255])
+    db.session.add(new_report)
+    db.session.commit()
     
     return jsonify({
         "report": report_text,
@@ -337,8 +403,8 @@ def process_payment():
             pass
         
         # 2. Send Email to Owner (Admin)
-        owner_email = "akshayjaiswal0204@gmail.com" 
-        owner_subject = f"🚀 New Pro Sale: {user.username}"
+        owner_email = os.environ.get('MAIL_USERNAME', "jaiswalakshay2709@gmail.com")
+        owner_subject = f"💰 New Pro Sale: {user.username}"
         owner_body = f"""
         <html>
             <body style="font-family: Arial, sans-serif;">
@@ -379,8 +445,7 @@ def apple_health_webhook():
             user_id=user.id,
             source="Apple HealthKit Sync",
             steps=data.get('steps', 0),
-            calories=data.get('calories', 0),
-            tenant_id=user.tenant_id
+            calories=data.get('calories', 0)
         )
         db.session.add(new_log)
         db.session.commit()
@@ -391,6 +456,195 @@ def apple_health_webhook():
         return jsonify({"status": "success", "message": "Data ingested"}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ==========================================
+# GOOGLE FIT OAUTH ARCHITECTURE
+# ==========================================
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_FIT_CLIENT_ID", "mock_client_id")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_FIT_CLIENT_SECRET", "mock_secret")
+# Note: For production, this should match the exact URI registered in Google Cloud Console
+# We dynamically build it below to support local network mobile testing
+@bp.route('/oauth/google/login', methods=['GET'])
+def google_oauth_login():
+    if 'user_id' not in session:
+        return jsonify({"message": "Please login first"}), 401
+    
+    frontend_origin = request.headers.get("Origin", "http://localhost:5173")
+    dynamic_redirect_uri = f"{frontend_origin}/oauth/callback"
+    
+    auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
+    params = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": dynamic_redirect_uri,
+        "response_type": "code",
+        "scope": "https://www.googleapis.com/auth/fitness.activity.read https://www.googleapis.com/auth/fitness.nutrition.read",
+        "access_type": "offline",
+        "prompt": "consent"
+    }
+    return jsonify({"auth_url": f"{auth_url}?{urlencode(params)}"}), 200
+
+@bp.route('/oauth/google/callback', methods=['POST'])
+def google_oauth_callback():
+    if 'user_id' not in session:
+        return jsonify({"message": "Please login first"}), 401
+        
+    data = request.get_json()
+    code = data.get('code')
+    if not code:
+        return jsonify({"message": "No authorization code provided"}), 400
+        
+    if GOOGLE_CLIENT_ID == "mock_client_id":
+        # Architecture Simulation for Portfolio / Dev Environment
+        session['google_access_token'] = "mock_access_token_123"
+        return jsonify({"message": "Successfully connected Google Fit!"}), 200
+        
+    frontend_origin = request.headers.get("Origin", "http://localhost:5173")
+    dynamic_redirect_uri = f"{frontend_origin}/oauth/callback"
+    
+    token_url = "https://oauth2.googleapis.com/token"
+    payload = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "code": code,
+        "grant_type": "authorization_code",
+        "redirect_uri": dynamic_redirect_uri
+    }
+    
+    try:
+        res = requests.post(token_url, data=payload)
+        res_data = res.json()
+        if "access_token" in res_data:
+            session['google_access_token'] = res_data['access_token']
+            return jsonify({"message": "Successfully connected Google Fit!"}), 200
+        return jsonify({"message": "Failed to get access token", "details": res_data}), 400
+    except Exception as e:
+        return jsonify({"message": f"OAuth Error: {str(e)}"}), 500
+
+@bp.route('/wearable/sync', methods=['POST'])
+def wearable_sync():
+    if 'user_id' not in session:
+        return jsonify({"message": "Please login first"}), 401
+        
+    user = User.query.get(session['user_id'])
+    
+    access_token = session.get('google_access_token')
+    if not access_token:
+        return jsonify({"message": "Google Fit not connected. Please connect first."}), 403
+        
+    if access_token == "mock_access_token_123":
+        import random
+        # Generate realistic data for the demonstration
+        steps = random.randint(3000, 12000)
+        calories_burned = int(steps * 0.04) 
+        
+        new_log = Progress(
+            user_id=user.id,
+            source="Google Fit API",
+            steps=steps,
+            calories=calories_burned
+        )
+        db.session.add(new_log)
+        db.session.commit()
+        cache.delete(f"progress_{user.id}")
+        return jsonify({"message": f"Synced {steps} steps from Google Fit!", "steps": steps, "calories": calories_burned}), 200
+        
+    # --- LIVE API INTEGRATION ---
+    import time
+    end_time = int(time.time() * 1000)
+    start_time = end_time - (86400 * 1000) # 24 hours ago
+    
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    payload = {
+      "aggregateBy": [{
+        "dataTypeName": "com.google.step_count.delta",
+        "dataSourceId": "derived:com.google.step_count.delta:com.google.android.gms:estimated_steps"
+      }],
+      "bucketByTime": { "durationMillis": 86400000 },
+      "startTimeMillis": start_time,
+      "endTimeMillis": end_time
+    }
+    
+    try:
+        res = requests.post("https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate", headers=headers, json=payload)
+        res_data = res.json()
+        
+        steps = 0
+        if "bucket" in res_data:
+            for bucket in res_data["bucket"]:
+                for dataset in bucket.get("dataset", []):
+                    for point in dataset.get("point", []):
+                        for value in point.get("value", []):
+                            steps += value.get("intVal", 0)
+                            
+        calories_burned = int(steps * 0.04) 
+        
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        existing_log = Progress.query.filter(
+            Progress.user_id == user.id,
+            Progress.source == "Google Fit API",
+            Progress.date >= today_start
+        ).first()
+
+        if existing_log:
+            existing_log.steps = steps
+            existing_log.calories = calories_burned
+        else:
+            new_log = Progress(
+                user_id=user.id,
+                source="Google Fit API",
+                steps=steps,
+                calories=calories_burned
+            )
+            db.session.add(new_log)
+            
+        db.session.commit()
+        cache.delete(f"progress_{user.id}")
+        return jsonify({"message": f"Synced {steps} steps from Google Fit!", "steps": steps, "calories": calories_burned}), 200
+        
+    except Exception as e:
+        return jsonify({"message": f"Google Fit API Error: {str(e)}"}), 500
+
+@bp.route('/generate_workout', methods=['POST'])
+@limiter.limit('3 per minute')
+def generate_workout():
+    if 'user_id' not in session:
+        return jsonify({"message": "Please login first"}), 401
+        
+    user = User.query.get(session['user_id'])
+    if user.subscription_tier == 'Free':
+        return jsonify({"message": "UPGRADE_REQUIRED", "reason": "AI Workout Generation is a Premium feature."}), 402
+        
+    data = request.get_json(silent=True) or {}
+    days_range = data.get("days_range", "1-3")
+        
+    cutoff_date = datetime.utcnow() - timedelta(days=7)
+    progress_logs = Progress.query.filter(Progress.user_id == user.id, Progress.date >= cutoff_date).all()
+    
+    total_meals = sum(1 for log in progress_logs if log.meal_name)
+    total_calories = sum(log.calories or 0 for log in progress_logs)
+    avg_cal = total_calories // total_meals if total_meals > 0 else 0
+    
+    from ..services.ai_service import analyze_fitness_query
+    
+    day_instruction = "Generate a personalized 3-day workout plan (Days 1, 2, and 3)."
+    if days_range == "4-6":
+        day_instruction = "Generate an extended 3-day workout plan for Days 4, 5, and 6, assuming the user has already completed days 1-3. Focus on progressive overload or active recovery as appropriate."
+
+    prompt = f"""Act as a world-class fitness coach. 
+The user has consumed an average of {avg_cal} calories over the last 7 days. 
+{day_instruction}
+CRITICAL RULES:
+1. Tailor this plan specifically for an Indian audience (accessible exercises, culturally relevant). DO NOT use forced stereotypes or clichés.
+2. DO NOT include any medical disclaimers, warnings, or advice to "consult a healthcare professional".
+3. DO NOT include any conversational filler (e.g. "Here is your plan"). Provide ONLY the markdown plan.
+4. DO NOT generate Markdown tables (e.g. `| column |`). The frontend cannot render them. Use standard nested bullet points instead.
+Format the response strictly in Markdown with headers and bullet points."""
+    
+    try:
+        workout_plan = analyze_fitness_query(prompt)
+        return jsonify({"plan": workout_plan}), 200
+    except Exception as e:
+        return jsonify({"message": "Error generating workout", "details": str(e)}), 500
 
 @bp.route('/support/contact', methods=['POST'])
 def contact_support():

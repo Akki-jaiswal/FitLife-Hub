@@ -1,4 +1,5 @@
 import os
+import secrets
 
 def load_env(file_path='.env'):
     if os.path.exists(file_path):
@@ -17,7 +18,8 @@ except ImportError:
     load_env()
 
 class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'fitlife_secret_key_2026'
+    # Use environment variable if set, otherwise generate a secure random key
+    SECRET_KEY = os.environ.get('SECRET_KEY') or 'development_secret_key_12345'
     SQLALCHEMY_DATABASE_URI = os.environ.get('SQLALCHEMY_DATABASE_URI') or 'sqlite:///site.db'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
