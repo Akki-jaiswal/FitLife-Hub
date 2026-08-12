@@ -126,6 +126,21 @@ def analyze_meal():
     meal_name_lower = ai_data.get('meal_name', 'Unknown Meal').lower()
     if 'unrecognized' not in meal_name_lower and 'unknown' not in meal_name_lower:
         db.session.add(new_entry)
+        
+        # --- Community Cheer Feed Trigger ---
+        # Automatically post to the global feed if it's a healthy meal (Grade A or B)
+        health_grade = ai_data.get('health_grade', '')
+        if health_grade and (health_grade.startswith('A') or health_grade.startswith('B')):
+            from ..models import CommunityFeed
+            if user:
+                feed_post = CommunityFeed(
+                    user_id=user.id,
+                    username=user.username,
+                    action_type='Meal',
+                    description=f"just logged a Grade {health_grade} healthy meal: {ai_data.get('meal_name')}! 🥗"
+                )
+                db.session.add(feed_post)
+        
         db.session.commit()
         cache.delete(f"progress_{session['user_id']}")
         
@@ -469,7 +484,8 @@ def google_oauth_login():
     if 'user_id' not in session:
         return jsonify({"message": "Please login first"}), 401
     
-    frontend_origin = request.headers.get("Origin", "http://localhost:5173")
+    import os
+    frontend_origin = request.headers.get("Origin") or os.environ.get("FRONTEND_URL", "http://localhost:5173")
     dynamic_redirect_uri = f"{frontend_origin}/oauth/callback"
     
     auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -498,7 +514,8 @@ def google_oauth_callback():
         session['google_access_token'] = "mock_access_token_123"
         return jsonify({"message": "Successfully connected Google Fit!"}), 200
         
-    frontend_origin = request.headers.get("Origin", "http://localhost:5173")
+    import os
+    frontend_origin = request.headers.get("Origin") or os.environ.get("FRONTEND_URL", "http://localhost:5173")
     dynamic_redirect_uri = f"{frontend_origin}/oauth/callback"
     
     token_url = "https://oauth2.googleapis.com/token"
@@ -629,7 +646,6 @@ def generate_workout():
     day_instruction = "Generate a personalized 3-day workout plan (Days 1, 2, and 3)."
     if days_range == "4-6":
         day_instruction = "Generate an extended 3-day workout plan for Days 4, 5, and 6, assuming the user has already completed days 1-3. Focus on progressive overload or active recovery as appropriate."
-
     prompt = f"""Act as a world-class fitness coach. 
 The user has consumed an average of {avg_cal} calories over the last 7 days. 
 {day_instruction}
@@ -642,6 +658,27 @@ Format the response strictly in Markdown with headers and bullet points."""
     
     try:
         workout_plan = analyze_fitness_query(prompt)
+        
+        # --- Community Cheer Feed Trigger ---
+        from ..models import CommunityFeed
+        # Spam prevention: Check if they already posted a workout to the feed today
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        existing_post = CommunityFeed.query.filter(
+            CommunityFeed.user_id == user.id,
+            CommunityFeed.action_type == 'Workout',
+            CommunityFeed.timestamp >= today
+        ).first()
+        
+        if not existing_post:
+            feed_post = CommunityFeed(
+                user_id=user.id,
+                username=user.username,
+                action_type='Workout',
+                description=f"just generated a killer AI-powered {days_range} Day Workout Plan! 💪"
+            )
+            db.session.add(feed_post)
+            db.session.commit()
+        
         return jsonify({"plan": workout_plan}), 200
     except Exception as e:
         return jsonify({"message": "Error generating workout", "details": str(e)}), 500
@@ -731,3 +768,77 @@ def chat_with_ai():
     except Exception as e:
         print(f"Chat error: {e}", flush=True)
         return jsonify({"message": f"Error connecting to AI Coach: {str(e)}"}), 500
+
+@bp.route('/voice_stream', methods=['POST'])
+def voice_stream():
+    data = request.get_json()
+    user_query = data.get('query')
+    language = data.get('language', 'en-US')
+    history = data.get('history', [])
+    
+    if not user_query:
+        return jsonify({"error": "No query provided"}), 400
+        
+    try:
+        user_context = ""
+        if 'user_id' in session:
+            from datetime import datetime, timedelta
+            from ..models import User, Progress
+            user = User.query.get(session['user_id'])
+            if user:
+                cutoff_date = datetime.utcnow() - timedelta(days=7)
+                progress_logs = Progress.query.filter(Progress.user_id == user.id, Progress.date >= cutoff_date).all()
+                total_meals = sum(1 for log in progress_logs if log.meal_name)
+                total_calories = sum(log.calories or 0 for log in progress_logs)
+                avg_cal = total_calories // total_meals if total_meals > 0 else 0
+                meals_list = ", ".join(set([log.meal_name for log in progress_logs if log.meal_name and log.meal_name != 'Unknown Meal']))
+                user_context = f"The user has tracked {total_meals} meals in the last 7 days. Average calories: {avg_cal} kcal. Foods they recently ate: {meals_list if meals_list else 'None'}."
+                
+        from ..services.ai_coach_voice_service import generate_coach_audio
+        import base64
+        
+        # This will hit Groq for the response text, then use Edge-TTS to get MP3 bytes
+        ai_text, audio_bytes = generate_coach_audio(user_query, language, user_context, history)
+        
+        # Encode the binary audio data as a base64 string to safely send via JSON
+        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+        
+        return jsonify({
+            "text": ai_text,
+            "audio_b64": audio_b64
+        }), 200
+    except Exception as e:
+        print(f"Voice Stream Error: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
+# --- COMMUNITY FEED ENDPOINTS ---
+
+@bp.route('/community_feed', methods=['GET'])
+def get_community_feed():
+    from ..models import CommunityFeed
+    # Auto-clear: Fetch only posts from the last 7 days
+    from datetime import datetime, timedelta
+    cutoff = datetime.utcnow() - timedelta(days=7)
+    posts = CommunityFeed.query.filter(CommunityFeed.timestamp >= cutoff).order_by(CommunityFeed.timestamp.desc()).limit(50).all()
+    feed_data = []
+    for post in posts:
+        # Return ISO string with 'Z' so the frontend knows it's UTC and can convert to local time
+        dt = post.timestamp
+        iso_time = dt.isoformat() + 'Z' if dt else ''
+        feed_data.append({
+            "id": post.id,
+            "username": post.username,
+            "action_type": post.action_type,
+            "description": post.description,
+            "timestamp": iso_time,
+            "cheers_count": post.cheers_count
+        })
+    return jsonify(feed_data), 200
+
+@bp.route('/cheer/<int:post_id>', methods=['POST'])
+def cheer_post(post_id):
+    from ..models import CommunityFeed
+    post = CommunityFeed.query.get_or_404(post_id)
+    post.cheers_count += 1
+    db.session.commit()
+    return jsonify({"message": "Cheered!", "cheers_count": post.cheers_count}), 200

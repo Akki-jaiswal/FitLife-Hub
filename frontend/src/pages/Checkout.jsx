@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const Checkout = ({ userTier, loggedInUser }) => {
-  const API_BASE = `http://${window.location.hostname}:5000`;
+const Checkout = ({ userTier, loggedInUser, API_BASE }) => {
   const navigate = useNavigate();
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');

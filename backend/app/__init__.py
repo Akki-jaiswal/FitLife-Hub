@@ -17,7 +17,7 @@ def create_app(config_class=Config):
     limiter.init_app(app)
     mail.init_app(app)
     import re
-    cors.init_app(app, supports_credentials=True, origins=re.compile(r"http://.*"))
+    cors.init_app(app, supports_credentials=True, origins=re.compile(r"https?://.*"))
     
     # Register blueprints
     from .blueprints.auth import bp as auth_bp

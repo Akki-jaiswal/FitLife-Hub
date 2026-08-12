@@ -5,13 +5,11 @@ import Checkout from './pages/Checkout';
 import WorkoutGenerator from './pages/WorkoutGenerator';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
-import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js';
-import { Line } from 'react-chartjs-2';
+import AICoachCall from './pages/AICoachCall';
+import Community from './pages/Community';
+import AnalyticsDashboard from './components/AnalyticsDashboard';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-
-// Register Chart.js modules
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
 function AppContent() {
   const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -566,6 +564,8 @@ function AppContent() {
         <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("hero"); setIsMenuOpen(false); }}>Home</a></li>
         <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("tracker"); setIsMenuOpen(false); }}>Tracker</a></li>
         <li><a href="#" onClick={(e) => { e.preventDefault(); navigate('/workout'); setIsMenuOpen(false); }}>AI Workouts</a></li>
+        <li><a href="#" onClick={(e) => { e.preventDefault(); navigate('/coach-call'); setIsMenuOpen(false); }} style={{ color: '#2ecc71', fontWeight: 'bold' }}>AI Coach</a></li>
+        <li><a href="#" onClick={(e) => { e.preventDefault(); navigate('/community'); setIsMenuOpen(false); }} style={{ color: '#e67e22', fontWeight: 'bold' }}>🔥 Feed</a></li>
         <li onClick={() => { setIsMenuOpen(false); navigate('/subscription'); }} style={{cursor: 'pointer'}}><span style={{color: '#f1c40f', fontWeight: 'bold'}}>💎 Premium</span></li>
         
         <li>
@@ -615,9 +615,9 @@ function AppContent() {
   <ul className="nav-links">
       <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("hero"); }}>Home</a></li>
       <li><a href="#" onClick={(e) => { e.preventDefault(); navigate('/workout'); setIsMenuOpen(false); }}>AI Workouts</a></li>
+      <li><a href="#" onClick={(e) => { e.preventDefault(); navigate('/coach-call'); setIsMenuOpen(false); }} style={{ color: '#2ecc71', fontWeight: 'bold' }}>AI Coach</a></li>
+      <li><a href="#" onClick={(e) => { e.preventDefault(); navigate('/community'); setIsMenuOpen(false); }} style={{ color: '#e67e22', fontWeight: 'bold' }}>🔥 Feed</a></li>
       <li onClick={() => { setIsMenuOpen(false); navigate('/subscription'); }} style={{cursor: 'pointer'}}><span style={{color: '#f1c40f', fontWeight: 'bold'}}>💎 Premium</span></li>
-      <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("quotes"); }}>Quotes</a></li>
-      <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("benefits"); }}>Benefits</a></li>
       <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("tracker"); }}>Tracker</a></li>
       <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("testimonials"); }}>Testimonials</a></li>
       <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("contact"); }}>Contact</a></li>
@@ -798,9 +798,9 @@ function AppContent() {
                 </div>
               </div>
             )}
-            {/* Chart */}
-            <div style={{ position: 'relative', height: '40vh', width: '100%', background: 'var(--bg-card)', padding: '10px', borderRadius: '10px' }}>
-              {progressData ? <Line data={progressData} options={{ maintainAspectRatio: false }} /> : <p>No history found.</p>}
+            {/* Dashboard */}
+            <div style={{ marginTop: '30px' }}>
+              <AnalyticsDashboard historyData={historyData} />
             </div>
 
             {/* --- STRATEGIC ANALYTICS SECTION --- */}
@@ -958,8 +958,9 @@ function AppContent() {
                 </>
         } />
         <Route path="/subscription" element={<Subscription userTier={userTier} handleUpgrade={handleUpgrade} handleContactSubmit={handleContactSubmit} loggedInUser={loggedInUser} />} />
-        <Route path="/checkout" element={<Checkout userTier={userTier} loggedInUser={loggedInUser} />} />
+        <Route path="/checkout" element={<Checkout userTier={userTier} loggedInUser={loggedInUser} API_BASE={API_BASE} />} />
         <Route path="/workout" element={<WorkoutGenerator userTier={userTier} loggedInUser={loggedInUser} API_BASE={API_BASE} />} />
+        <Route path="/community" element={<Community API_BASE={API_BASE} />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
       </Routes>
@@ -1190,6 +1191,7 @@ export default function App() {
     <Router>
       <Routes>
         <Route path="/oauth/callback" element={<OAuthCallback />} />
+        <Route path="/coach-call" element={<AICoachCall />} />
         <Route path="*" element={<AppContent />} />
       </Routes>
     </Router>

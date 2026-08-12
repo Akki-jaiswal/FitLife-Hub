@@ -24,6 +24,16 @@ class User(db.Model):
     ai_analyses = db.relationship('AIAnalysis', backref='user', lazy=True, cascade="all, delete-orphan")
     reports = db.relationship('Report', backref='user', lazy=True, cascade="all, delete-orphan")
     messages = db.relationship('Message', backref='user', lazy=True)
+    community_posts = db.relationship('CommunityFeed', backref='user_ref', lazy=True, cascade="all, delete-orphan")
+
+class CommunityFeed(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    username = db.Column(db.String(50), nullable=False)
+    action_type = db.Column(db.String(50), nullable=False) # 'Meal' or 'Workout'
+    description = db.Column(db.String(255), nullable=False)
+    timestamp = db.Column(db.DateTime(timezone=True), server_default=func.now())
+    cheers_count = db.Column(db.Integer, default=0, nullable=False)
 
 class Progress(db.Model):
     id = db.Column(db.Integer, primary_key=True)
