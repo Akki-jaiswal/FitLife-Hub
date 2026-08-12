@@ -446,22 +446,6 @@ function AppContent() {
     }
   };
 
-    const handleUpgrade = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/upgrade_to_pro`, {
-        method: 'POST',
-        credentials: 'include'
-      });
-      if (response.ok) {
-        setUserTier('Pro');
-        setShowPricingModal(false);
-        setToast({ show: true, message: "Welcome to FitLife Pro! 💎" });
-        setTimeout(() => setToast({ show: false, message: '' }), 3000);
-      }
-    } catch (e) {
-       console.log("Upgrade failed");
-    }
-  };
 
     const handleNavClick = (hash) => {
     setIsMenuOpen(false);
@@ -957,7 +941,7 @@ function AppContent() {
 
                 </>
         } />
-        <Route path="/subscription" element={<Subscription userTier={userTier} handleUpgrade={handleUpgrade} handleContactSubmit={handleContactSubmit} loggedInUser={loggedInUser} />} />
+        <Route path="/subscription" element={<Subscription userTier={userTier} handleContactSubmit={handleContactSubmit} loggedInUser={loggedInUser} />} />
         <Route path="/checkout" element={<Checkout userTier={userTier} loggedInUser={loggedInUser} API_BASE={API_BASE} />} />
         <Route path="/workout" element={<WorkoutGenerator userTier={userTier} loggedInUser={loggedInUser} API_BASE={API_BASE} />} />
         <Route path="/community" element={<Community API_BASE={API_BASE} />} />

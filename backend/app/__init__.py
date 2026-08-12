@@ -32,4 +32,24 @@ def create_app(config_class=Config):
     with app.app_context():
         db.create_all()
         
+    # Error Handlers
+    from werkzeug.exceptions import HTTPException
+    from flask import jsonify
+    @app.errorhandler(Exception)
+    def handle_exception(e):
+        if isinstance(e, HTTPException):
+            return jsonify({"message": e.description}), e.code
+        # Prevent stack trace leakage in production
+        import logging
+        logging.error(f"Internal Server Error: {e}")
+        return jsonify({"message": "Internal Server Error"}), getattr(e, 'code', 500)
+
+    # Security Headers
+    @app.after_request
+    def add_security_headers(response):
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+        return response
+        
     return app

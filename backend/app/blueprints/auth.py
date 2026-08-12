@@ -2,11 +2,12 @@ from flask import Blueprint, request, jsonify, session
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import or_
 from ..models import User
-from ..extensions import db
+from ..extensions import db, limiter
 
 bp = Blueprint('auth', __name__)
 
 @bp.route('/register', methods=['POST'])
+@limiter.limit("5 per minute")
 def register():
     data = request.get_json()
     uname = data.get('username')
@@ -66,6 +67,7 @@ def register():
         return jsonify({"message": "Database error. Please try again."}), 500
 
 @bp.route('/login', methods=['POST'])
+@limiter.limit("5 per minute")
 def login():
     data = request.get_json()
     identifier = data.get('identifier')
@@ -102,13 +104,4 @@ def check_session():
             }), 200
     return jsonify({"message": "No session"}), 401
 
-@bp.route('/upgrade_to_pro', methods=['POST'])
-def upgrade_to_pro():
-    if 'user_id' not in session:
-        return jsonify({"message": "Unauthorized"}), 401
-    user = User.query.get(session['user_id'])
-    if user:
-        user.subscription_tier = 'Pro'
-        db.session.commit()
-        return jsonify({"message": "Successfully upgraded to Pro!", "tier": "Pro"}), 200
-    return jsonify({"message": "User not found"}), 404
+
