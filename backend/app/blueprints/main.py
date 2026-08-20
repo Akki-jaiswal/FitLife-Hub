@@ -33,21 +33,15 @@ def send_message():
         db.session.add(db_msg)
         db.session.commit()
 
-        admin_msg = Message(
-            subject=f"New FitLife Hub Inquiry: {user_name}",
-            sender=current_app.config['MAIL_USERNAME'],
-            recipients=['jaiswalakshay2709@gmail.com'], 
-        )
-        admin_msg.body = f"From: {user_name} <{user_email}>\n\n{data.get('message')}"
-        mail.send(admin_msg)
+        # Send notification to admin
+        admin_subject = f"New FitLife Hub Inquiry: {user_name}"
+        admin_body = f"From: {user_name} <{user_email}>\n\n{data.get('message')}"
+        send_email(admin_subject, [os.environ.get('SUPPORT_EMAIL', 'jaiswalakshay2709@gmail.com')], text_body=admin_body)
 
-        user_msg = Message(
-            subject="Thanks for reaching out to FitLife Hub! \U0001F957",
-            sender=current_app.config['MAIL_USERNAME'],
-            recipients=[user_email], 
-        )
-        user_msg.body = f"Hi {user_name},\n\nThanks for reaching out to FitLife Hub! We've received your message and our lead consultant, Coach Akki, will get back to you shortly. In the meantime, feel free to use our AI Meal Logger to track your nutrition for the day!\n\nStayfit, stay strong!\n- The FitLife Hub Team"
-        mail.send(user_msg)
+        # Send receipt to user
+        user_subject = "Thanks for reaching out to FitLife Hub! \U0001F957"
+        user_body = f"Hi {user_name},\n\nThanks for reaching out to FitLife Hub! We've received your message and our lead consultant, Coach Akki, will get back to you shortly. In the meantime, feel free to use our AI Meal Logger to track your nutrition for the day!\n\nStayfit, stay strong!\n- The FitLife Hub Team"
+        send_email(user_subject, [user_email], text_body=user_body)
 
         # 2. Send via WhatsApp (Twilio)
         TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', 'mock_sid')

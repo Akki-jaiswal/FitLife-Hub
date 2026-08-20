@@ -1,4 +1,4 @@
-from flask import Flask
+﻿from flask import Flask
 from .config import Config
 from .extensions import db, mail, cors
 import os
@@ -15,8 +15,7 @@ def create_app(config_class=Config):
     db.init_app(app)
     cache.init_app(app)
     limiter.init_app(app)
-    mail.init_app(app)
-    import re
+        import re
     cors.init_app(app, supports_credentials=True, origins=re.compile(r"https?://.*"))
     
     # Register blueprints
@@ -53,3 +52,4 @@ def create_app(config_class=Config):
         return response
         
     return app
+

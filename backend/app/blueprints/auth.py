@@ -27,14 +27,11 @@ def register():
         
         # 1. Send Welcome Email
         try:
-            from flask_mail import Message
-            from ..extensions import mail
-            msg = Message("Welcome to FitLife Hub!", recipients=[uemail])
-            msg.html = f"<h3>Hello {uname},</h3><p>Welcome to <b>FitLife Hub</b>! We are thrilled to have you start your fitness journey with us.</p>"
-            mail.send(msg)
-            print(f"Welcome email sent to {uemail}!")
+            from ..email_service import send_email
+            html_content = f"<h3>Hello {uname},</h3><p>Welcome to <b>FitLife Hub</b>! We are thrilled to have you start your fitness journey with us.</p>"
+            send_email("Welcome to FitLife Hub!", [uemail], html_body=html_content)
         except Exception as e:
-            print(f"Failed to send email: {e}")
+            print(f"Failed to trigger welcome email: {e}")
             
         # 2. Send Welcome WhatsApp (Twilio)
         if phone_number:

@@ -1,4 +1,4 @@
-
+﻿
 waitress
 Flask-Caching
 Flask-Limiter
@@ -6,3 +6,5 @@ Flask-Limiter
 waitress
 Flask-Caching
 Flask-Limiter
+psycopg2-binary==2.9.12
+
