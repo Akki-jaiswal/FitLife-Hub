@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, jsonify, current_app
+﻿from flask import Blueprint, render_template, request, jsonify, current_app
 import os
 from twilio.rest import Client
 from ..email_service import send_email
@@ -8,7 +8,7 @@ bp = Blueprint('main', __name__)
 
 @bp.route('/')
 def index():
-    return render_template('index.html')
+    return jsonify({"status": "FitLife Backend is Live and connected to Supabase!"}), 200
 
 @bp.route('/send_message', methods=['POST'])
 def send_message():
@@ -57,7 +57,7 @@ def send_message():
                     <p style="margin: 0; color: #16a085; font-style: italic;">In the meantime, feel free to use our AI Meal Logger to track your nutrition for the day!</p>
                 </div>
                 <p style="color: #34495e; font-size: 16px; font-weight: bold; text-align: center; margin-top: 30px;">
-                    Stay fit, stay strong! 💪<br>
+                    Stay fit, stay strong! ðŸ’ª<br>
                     <span style="color: #7f8c8d; font-size: 14px;">- The FitLife Hub Team</span>
                 </p>
             </div>
@@ -74,3 +74,4 @@ def send_message():
         import traceback
         traceback.print_exc()
         return jsonify({"message": "Failed to send message.", "error": str(e)}), 500
+
