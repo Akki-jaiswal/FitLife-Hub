@@ -381,7 +381,7 @@ function AppContent() {
     if (response.ok) {
       setToast({ show: true, message: "Message Sent Successfully! 🚀" });
       e.target.reset();
-      setTimeout(() => setToast({ show: false, message: '' }), 2500); // Auto-hide
+      setTimeout(() => setToast({ show: false, message: '' }), 2000); // Auto-hide in 2 seconds
     }
     else {
       const errData = await response.json();
@@ -421,6 +421,9 @@ function AppContent() {
 
   const handleRegister = async (e) => {
     e.preventDefault();
+    setIsAuthSuccess(true);
+    setAuthMessage("Creating your account... ⏳");
+    
     try {
       const response = await fetch(`${API_BASE}/register`, {
         method: 'POST',
@@ -603,7 +606,7 @@ function AppContent() {
       <li><a href="#" onClick={(e) => { e.preventDefault(); navigate('/community'); setIsMenuOpen(false); }} style={{ color: '#e67e22', fontWeight: 'bold' }}>🔥 Feed</a></li>
       <li onClick={() => { setIsMenuOpen(false); navigate('/subscription'); }} style={{cursor: 'pointer'}}><span style={{color: '#f1c40f', fontWeight: 'bold'}}>💎 Premium</span></li>
       <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("tracker"); }}>Tracker</a></li>
-      <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("testimonials"); }}>Testimonials</a></li>
+      <li className="hide-on-mobile"><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("testimonials"); }}>Testimonials</a></li>
       <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("contact"); }}>Contact</a></li>
       <li><a href="#" onClick={(e) => { e.preventDefault(); handleNavClick("faq"); }}>FAQ</a></li>
       

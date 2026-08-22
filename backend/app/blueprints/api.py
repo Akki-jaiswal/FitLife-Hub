@@ -137,7 +137,7 @@ def analyze_meal():
                     user_id=user.id,
                     username=user.username,
                     action_type='Meal',
-                    description=f"just logged a Grade {health_grade} healthy meal: {ai_data.get('meal_name')}! ðŸ¥—"
+                    description=f"just logged a Grade {health_grade} healthy meal: {ai_data.get('meal_name')}! 🍎"
                 )
                 db.session.add(feed_post)
         
@@ -213,7 +213,7 @@ def generate_report():
             
             if TWILIO_ACCOUNT_SID != 'mock_sid':
                 client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-                report_msg = f"ðŸ“Š *Your FitLife {period}ly Report* ðŸ“Š\n\n{report_text}\n\n- Avg Steps: {avg_steps}\n- Avg Calories: {avg_cal} kcal"
+                report_msg = f"📊 *Your FitLife {period}ly Report* 📊\n\n{report_text}\n\n- Avg Steps: {avg_steps}\n- Avg Calories: {avg_cal} kcal"
                 client.messages.create(body=report_msg, from_=TWILIO_WHATSAPP_NUMBER, to=wa_phone)
                 print(f"Twilio WhatsApp Report sent to {wa_phone}!")
             else:
@@ -377,6 +377,39 @@ def process_payment():
     try:
         # Upgrade user in database safely
         user.subscription_tier = 'Pro'
+        
+        # Generate receipt details
+        import uuid
+        receipt_id = f"REC-{str(uuid.uuid4())[:8].upper()}"
+        
+        # STORE RECEIPT IN BACKEND DATABASE
+        from ..models import Transaction
+        new_transaction = Transaction(
+            user_id=user.id,
+            receipt_id=receipt_id,
+            amount=9.00,
+            payment_method=payment_method.upper(),
+            status='Completed'
+        )
+        db.session.add(new_transaction)
+        db.session.commit()
+        
+        from ..email_service import send_email
+        from flask import current_app
+        import threading
+        
+        app = current_app._get_current_object()
+        
+        def send_async_email(app_context, subject, recipients, html):
+            try:
+                send_email(subject, recipients, html_body=html)
+            except Exception as e:
+                print(f"Background API Email Error: {e}", flush=True)
+
+        # 1. Send Email to User
+        user_subject = "Welcome to FitLife Pro! Your Receipt"
+        user_body = f"""
+        <html>
             <body style="font-family: Arial, sans-serif; color: #333;">
                 <h2 style="color: #2ecc71;">Welcome to FitLife Pro, {user.username}!</h2>
                 <p>Your payment was successful. You now have unlimited access to all AI features.</p>
@@ -391,18 +424,17 @@ def process_payment():
         </html>
         """
         try:
-            msg_user = Message(subject=user_subject, recipients=[user.email], html=user_body)
-            threading.Thread(target=send_async_email, args=(app, msg_user)).start()
+            threading.Thread(target=send_async_email, args=(app, user_subject, [user.email], user_body)).start()
         except Exception:
             pass
         
         # 2. Send Email to Owner (Admin)
         owner_email = os.environ.get('MAIL_USERNAME', "jaiswalakshay2709@gmail.com")
-        owner_subject = f"ðŸ’° New Pro Sale: {user.username}"
+        owner_subject = f"💰 New Pro Sale: {user.username}"
         owner_body = f"""
         <html>
             <body style="font-family: Arial, sans-serif;">
-                <h2 style="color: #27ae60;">Cha-Ching! New Sale! ðŸ’°</h2>
+                <h2 style="color: #27ae60;">Cha-Ching! New Sale! 💰</h2>
                 <p><strong>User:</strong> {user.username} ({user.email})</p>
                 <p><strong>Amount:</strong> $9.00</p>
                 <p><strong>Method:</strong> {payment_method.upper()}</p>
@@ -411,8 +443,7 @@ def process_payment():
         </html>
         """
         try:
-            msg_owner = Message(subject=owner_subject, recipients=[owner_email], html=owner_body)
-            threading.Thread(target=send_async_email, args=(app, msg_owner)).start()
+            threading.Thread(target=send_async_email, args=(app, owner_subject, [owner_email], owner_body)).start()
         except Exception:
             pass
         
@@ -629,7 +660,7 @@ def generate_workout():
 The user has consumed an average of {avg_cal} calories over the last 7 days. 
 {day_instruction}
 CRITICAL RULES:
-1. Tailor this plan specifically for an Indian audience (accessible exercises, culturally relevant). DO NOT use forced stereotypes or clichÃ©s.
+1. Tailor this plan specifically for an Indian audience (accessible exercises, culturally relevant). DO NOT use forced stereotypes or clichÃƒÂ©s.
 2. DO NOT include any medical disclaimers, warnings, or advice to "consult a healthcare professional".
 3. DO NOT include any conversational filler (e.g. "Here is your plan"). Provide ONLY the markdown plan.
 4. DO NOT generate Markdown tables (e.g. `| column |`). The frontend cannot render them. Use standard nested bullet points instead.
@@ -653,7 +684,7 @@ Format the response strictly in Markdown with headers and bullet points."""
                 user_id=user.id,
                 username=user.username,
                 action_type='Workout',
-                description=f"just generated a killer AI-powered {days_range} Day Workout Plan! ðŸ’ª"
+                description=f"just generated a killer AI-powered {days_range} Day Workout Plan! 💪"
             )
             db.session.add(feed_post)
             db.session.commit()
@@ -698,7 +729,7 @@ def contact_support():
         # We only send if we have actual credentials (or we simulate success)
         if TWILIO_ACCOUNT_SID != 'mock_sid':
             client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-            wa_msg = f"ðŸš¨ New FitLife Support Ticket ðŸš¨\n\n*Name:* {name}\n*Email:* {email}\n*Message:* {message_content}"
+            wa_msg = f"Ã°Å¸Å¡Â¨ New FitLife Support Ticket Ã°Å¸Å¡Â¨\n\n*Name:* {name}\n*Email:* {email}\n*Message:* {message_content}"
             try:
                 client.messages.create(
                     body=wa_msg,
@@ -818,4 +849,9 @@ def cheer_post(post_id):
     post.cheers_count += 1
     db.session.commit()
     return jsonify({"message": "Cheered!", "cheers_count": post.cheers_count}), 200
+
+
+
+
+
 

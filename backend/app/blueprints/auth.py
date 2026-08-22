@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, session
+﻿from flask import Blueprint, request, jsonify, session
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import or_
 from ..models import User
@@ -50,7 +50,7 @@ def register():
                 
                 if TWILIO_ACCOUNT_SID != 'mock_sid':
                     client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-                    welcome_msg = f"Hello {uname}! Welcome to FitLife Hub. 🏋️‍♂️\n\nYour fitness journey begins now. Generate your first AI report today!"
+                    welcome_msg = f"Hello {uname}! Welcome to FitLife Hub. 🏋️‍♂️\nYour fitness journey begins now. Generate your first AI report today!"
                     client.messages.create(body=welcome_msg, from_=TWILIO_WHATSAPP_NUMBER, to=wa_phone)
                     print(f"Twilio WhatsApp welcome sent to {wa_phone}!")
                 else:
@@ -100,5 +100,8 @@ def check_session():
                 "google_fit_connected": session.get('google_access_token') is not None
             }), 200
     return jsonify({"message": "No session"}), 401
+
+
+
 
 

@@ -1,8 +1,8 @@
 from flask import Blueprint, render_template, request, jsonify, current_app
 import os
 from twilio.rest import Client
-from flask_mail import Message
-from ..extensions import mail
+from ..email_service import send_email
+import threading
 
 bp = Blueprint('main', __name__)
 
@@ -18,60 +18,59 @@ def send_message():
         user_name = data.get('name')
         user_phone = data.get('phone', '')
         
-        # Store in DB
+        # Store in DB asynchronously to bypass cloud latency
         from ..models import Message as DBMessage
         from ..extensions import db
         import flask
         
         user_id = flask.session.get('user_id')
-        db_msg = DBMessage(
-            user_id=user_id,
-            name=user_name,
-            email=user_email,
-            content=data.get('message')
-        )
-        db.session.add(db_msg)
-        db.session.commit()
+        app = current_app._get_current_object()
+
+        def background_db_save(app_context, uid, uname, uemail, umsg):
+            with app_context.app_context():
+                try:
+                    db_msg = DBMessage(user_id=uid, name=uname, email=uemail, content=umsg)
+                    db.session.add(db_msg)
+                    db.session.commit()
+                except Exception as e:
+                    print(f"Background DB Save Error: {e}")
+
+        # Fire and forget!
+        threading.Thread(target=background_db_save, args=(app, user_id, user_name, user_email, data.get('message'))).start()
 
         # Send notification to admin
         admin_subject = f"New FitLife Hub Inquiry: {user_name}"
         admin_body = f"From: {user_name} <{user_email}>\n\n{data.get('message')}"
         send_email(admin_subject, [os.environ.get('SUPPORT_EMAIL', 'jaiswalakshay2709@gmail.com')], text_body=admin_body)
 
-        # Send receipt to user
+        # Send receipt to user with beautiful HTML formatting
         user_subject = "Thanks for reaching out to FitLife Hub! \U0001F957"
-        user_body = f"Hi {user_name},\n\nThanks for reaching out to FitLife Hub! We've received your message and our lead consultant, Coach Akki, will get back to you shortly. In the meantime, feel free to use our AI Meal Logger to track your nutrition for the day!\n\nStayfit, stay strong!\n- The FitLife Hub Team"
-        send_email(user_subject, [user_email], text_body=user_body)
-
-        # 2. Send via WhatsApp (Twilio)
-        TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', 'mock_sid')
-        TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', 'mock_token')
-        TWILIO_WHATSAPP_NUMBER = os.environ.get('TWILIO_WHATSAPP_NUMBER', 'whatsapp:+14155238886')
-        OWNER_WHATSAPP_NUMBER = os.environ.get('OWNER_WHATSAPP_NUMBER', 'whatsapp:+919999999999')
+        user_html = f"""
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 20px; border-radius: 10px; border-top: 5px solid #2ecc71;">
+            <h2 style="color: #2c3e50; text-align: center;">Welcome to FitLife Hub!</h2>
+            <div style="background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <p style="color: #34495e; font-size: 16px; line-height: 1.6;">Hi <strong style="color: #2ecc71;">{user_name}</strong>,</p>
+                <p style="color: #34495e; font-size: 16px; line-height: 1.6;">
+                    Thanks for reaching out to <strong>FitLife Hub!</strong> We've received your message and our lead consultant, <span style="color: #e74c3c; font-weight: bold;">Coach Akki</span>, will get back to you shortly.
+                </p>
+                <div style="background-color: #e8f8f5; border-left: 4px solid #1abc9c; padding: 15px; margin: 20px 0;">
+                    <p style="margin: 0; color: #16a085; font-style: italic;">In the meantime, feel free to use our AI Meal Logger to track your nutrition for the day!</p>
+                </div>
+                <p style="color: #34495e; font-size: 16px; font-weight: bold; text-align: center; margin-top: 30px;">
+                    Stay fit, stay strong! 💪<br>
+                    <span style="color: #7f8c8d; font-size: 14px;">- The FitLife Hub Team</span>
+                </p>
+            </div>
+        </div>
+        """
+        send_email(user_subject, [user_email], html_body=user_html)
         
-        if TWILIO_ACCOUNT_SID != 'mock_sid':
-            client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-            
-            # Send to Owner
-            wa_owner_msg = f"New FitLife Support Ticket\n\n*Name:* {user_name}\n*Email:* {user_email}\n*Phone:* {user_phone}\n*Message:* {data.get('message')}"
-            try:
-                client.messages.create(body=wa_owner_msg, from_=TWILIO_WHATSAPP_NUMBER, to=OWNER_WHATSAPP_NUMBER)
-            except Exception as e:
-                print(f"Twilio Error (Owner): {e}")
-                
-            # Send to User
-            if user_phone:
-                # Ensure the user_phone is formatted correctly for WhatsApp
-                user_wa_number = f"whatsapp:{user_phone}" if not user_phone.startswith('whatsapp:') else user_phone
-                wa_user_msg = f"Hi {user_name}, thanks for reaching out to FitLife Hub! Coach Akki will get back to you shortly."
-                try:
-                    client.messages.create(body=wa_user_msg, from_=TWILIO_WHATSAPP_NUMBER, to=user_wa_number)
-                except Exception as e:
-                    print(f"Twilio Error (User): {e}")
-        else:
-            print(f"Mock Twilio WhatsApp Sent to Owner and User ({user_phone})")
+        import time
+        time.sleep(1.5) # Artificial delay to make the sending process feel more authentic
+        
+        return jsonify({"message": "Message sent successfully! We will get back to you shortly."}), 200
 
-        return jsonify({"message": "Message Sent Successfully! \U0001f680"}), 200
-    
     except Exception as e:
-        return jsonify({"message": str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({"message": "Failed to send message.", "error": str(e)}), 500
