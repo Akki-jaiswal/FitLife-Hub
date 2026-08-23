@@ -62,7 +62,7 @@ def get_voice_response_text(user_query, language, user_context="", history=None)
                 "max_tokens": 250,
                 "temperature": 0.7
             }
-            response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=data, timeout=3.5)
+            response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=data, timeout=8)
             if response.status_code == 200:
                 ai_text = response.json()['choices'][0]['message']['content']
                 
@@ -119,6 +119,7 @@ def generate_coach_audio(user_query, language, user_context="", history=None):
         print(f"Edge-TTS Error: {e}", flush=True)
         audio_bytes = b""
     return ai_text, audio_bytes
+
 
 
 

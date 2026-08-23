@@ -1,4 +1,4 @@
-import os
+﻿import os
 import secrets
 
 def load_env(file_path='.env'):
@@ -30,6 +30,8 @@ class Config:
         
     SQLALCHEMY_DATABASE_URI = db_url
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SESSION_COOKIE_SAMESITE = 'None'
+    SESSION_COOKIE_SECURE = True
     
     # Mail Config
     MAIL_SERVER = 'smtp.gmail.com'
@@ -48,3 +50,4 @@ class DevelopmentConfig(Config):
 
 class ProductionConfig(Config):
     DEBUG = False
+

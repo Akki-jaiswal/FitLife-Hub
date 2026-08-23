@@ -40,7 +40,7 @@ def analyze_fitness_query(user_query, history=None, user_context=""):
                 "model": model_name,
                 "messages": messages
             }
-            response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=3.5)
+            response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=8)
             if response.status_code == 200:
                 return response.json()['choices'][0]['message']['content']
             else:
@@ -96,6 +96,7 @@ def generate_progress_report(user_data, report_type="Weekly"):
     except Exception as e:
         print(f"Gemini Report API Error: {e}")
         return "Failed to generate AI report. Please try again later."
+
 
 
 
