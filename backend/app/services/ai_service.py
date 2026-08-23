@@ -6,12 +6,7 @@ GENAI_API_KEY = os.environ.get('GENAI_API_KEY', 'dummy_key')
 genai.configure(api_key=GENAI_API_KEY)
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', 'dummy_groq_key')
 
-GROQ_MODELS = [
-    "llama-3.3-70b-versatile",
-    "llama3-8b-8192",
-    "mixtral-8x7b-32768", 
-    "gemma2-9b-it"
-]
+GROQ_MODELS = ['qwen/qwen3.6-27b']
 
 def analyze_fitness_query(user_query, history=None, user_context=""):
     if history is None:
