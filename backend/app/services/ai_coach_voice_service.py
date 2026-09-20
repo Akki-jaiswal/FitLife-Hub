@@ -10,7 +10,7 @@ GENAI_API_KEY = os.environ.get('GENAI_API_KEY', 'dummy_key')
 genai.configure(api_key=GENAI_API_KEY)
 
 # Bulletproof Model Waterfall
-GROQ_MODELS = ['qwen/qwen3.6-27b']
+GROQ_MODELS = ['qwen/qwen3.8-27b']
 
 async def _generate_tts_audio_async(text, language):
     voice = "hi-IN-SwaraNeural" if language == "hi-IN" else "en-US-ChristopherNeural"
